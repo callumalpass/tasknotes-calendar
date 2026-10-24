@@ -39,7 +39,12 @@ test.describe("time grid", () => {
 		const p = await slotPoint(page, "2026-10-23", 19 * 60 + 40);
 		await page.mouse.click(p.x, p.y);
 		await expect.poll(() => lastLog(page, "select")).toBe("select 2026-10-23T19:30 → 2026-10-23T20:00");
-		expect(await lastLog(page, "dateclick")).toBe("dateclick 2026-10-23");
+		// The click names the slot's time, so quick capture can prefill it.
+		expect(await lastLog(page, "dateclick")).toBe("dateclick 2026-10-23T19:30");
+		const head = await page.locator(".tnc-allday-layer").boundingBox();
+		const col = await page.locator('.tnc-col[data-date="2026-10-23"]').boundingBox();
+		await page.mouse.click(col!.x + col!.width / 2, head!.y + head!.height - 3);
+		await expect.poll(() => lastLog(page, "dateclick")).toBe("dateclick 2026-10-23");
 	});
 
 	test("a timed task dropped on the all-day row becomes all-day", async ({ page }) => {
@@ -115,6 +120,119 @@ test.describe("other views", () => {
 		await expect.poll(() => lastLog(page, "drop")).toBe("drop span-1 2026-10-21 → 2026-10-24 (all-day)");
 	});
 
+	test("month: a dragged item moves with the pointer before it is dropped", async ({ page }) => {
+		await open(page, "view=dayGridMonth");
+		const el = item(page, "span-1"); // Mon 19 – Wed 21
+		const from = await center(el);
+		const start = (await el.boundingBox())!;
+		const target = (await page.locator('.tnc-dg-day[data-date="2026-10-21"]').boundingBox())!;
+		const source = (await page.locator('.tnc-dg-day[data-date="2026-10-19"]').boundingBox())!;
+		await page.mouse.move(from.x, from.y);
+		await page.mouse.down();
+		await page.mouse.move(from.x + 2, from.y + 6, { steps: 2 });
+		await page.mouse.move(from.x + (target.x - source.x), from.y, { steps: 8 });
+		// Mid-drag: drawn in the target cell, still marked as dragging, nothing saved yet.
+		const mid = (await el.boundingBox())!;
+		expect(mid.x - start.x).toBeCloseTo(target.x - source.x, -1);
+		await expect(el).toHaveClass(/is-dragging/);
+		expect(await lastLog(page, "drop")).toBeUndefined();
+		await page.mouse.move(from.x + (target.x - source.x) - (target.x - source.x) / 2, from.y, { steps: 4 });
+		expect((await el.boundingBox())!.x - start.x).toBeCloseTo((target.x - source.x) / 2, -1);
+		await page.mouse.up();
+		await expect.poll(() => lastLog(page, "drop")).toBe("drop span-1 2026-10-20 → 2026-10-23 (all-day)");
+	});
+
+	test("month: rows make room for a tall '+N more' link", async ({ page }) => {
+		await open(page, "view=dayGridMonth");
+		await page.addStyleTag({ content: ".tnc { --tnc-more-h: 44px; }" });
+		await page.evaluate(() => window.tnc.calendar.rerender());
+		const more = page.locator(".tnc-more").first();
+		await expect(more).toBeVisible();
+		const overflow = await page.locator(".tnc-dg-week").evaluateAll((rows) =>
+			rows.flatMap((row) => {
+				const r = row.getBoundingClientRect();
+				return [...row.querySelectorAll(".tnc-more, .tnc-item")].map((el) => el.getBoundingClientRect().bottom - r.bottom).filter((d) => d > 0.5);
+			}),
+		);
+		expect(overflow).toEqual([]);
+		expect((await more.boundingBox())!.height).toBe(44);
+	});
+
+	test("month dots: cells wrap one dot per item with a count, and the cell takes the tap", async ({ page }) => {
+		await open(page, "view=dayGridMonth&display=dots");
+		const cell = page.locator('.tnc-dg-day[data-date="2026-10-19"]');
+		const dots = cell.locator(".tnc-item--indicator");
+		await expect(dots.first()).toBeVisible();
+		const n = await dots.count();
+		const more = (await cell.locator(".tnc-dg-dots-more").allTextContents())[0];
+		const total = n + (more ? Number(more.slice(1)) : 0);
+		await expect(cell).toHaveAttribute("aria-label", `Monday, 19 October 2026, ${total} items`);
+		// Dots wrap across the cell instead of stacking as rows.
+		const ys = new Set(await dots.evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().y))));
+		expect(ys.size).toBeLessThan(n);
+		await expect(dots.first()).toHaveAttribute("aria-hidden", "true");
+		await expect(page.locator(".tnc-dg .tnc-item.is-draggable")).toHaveCount(0);
+		const dot = (await dots.first().boundingBox())!;
+		await page.mouse.click(dot.x + dot.width / 2, dot.y + dot.height / 2);
+		await expect.poll(() => lastLog(page, "dateclick")).toBe("dateclick 2026-10-19");
+		expect(await lastLog(page, "click ")).toBeUndefined();
+		// A cap leaves a count for the rest.
+		await page.evaluate(() => window.tnc.setLayout({ dayMaxEvents: 3 }));
+		await expect(dots).toHaveCount(3);
+		await expect(cell.locator(".tnc-dg-dots-more")).toHaveText(`+${total - 3}`);
+	});
+
+	test("render hooks get the variant and a formatted time", async ({ page }) => {
+		await open(page, "view=timeGridWeek");
+		const seen = await page.evaluate(() => {
+			const host = document.createElement("div");
+			host.style.cssText = "position:fixed;inset:0;height:600px;background:#fff";
+			document.body.append(host);
+			const Cal = window.tnc.calendar.constructor as new (...a: unknown[]) => { setOptions(o: unknown): void; flush(): void };
+			const out: string[] = [];
+			const cal = new Cal(host, {
+				view: "week",
+				date: "2026-10-21",
+				hour12: true,
+				itemDidMount: (a: { item: { id: string }; variant: string; timeText: string }) => out.push(`${a.item.id} ${a.variant} ${a.timeText}`),
+			}, [
+				{ id: "t", title: "Timed", start: "2026-10-21T09:00", end: "2026-10-21T10:30" },
+				{ id: "a", title: "All day", start: "2026-10-21" },
+			]);
+			cal.setOptions({ view: "month" });
+			cal.setOptions({ view: "list" });
+			return out;
+		});
+		expect(seen).toEqual(expect.arrayContaining(["t timed 9am – 10:30am", "a bar ", "t dot 9am", "t list 9am – 10:30am", "a list "]));
+	});
+
+	test("callbacks see the latest item passed to setItems, even when it draws the same", async ({ page }) => {
+		await open(page, "view=timeGridWeek");
+		const result = await page.evaluate(() => {
+			const host = document.createElement("div");
+			host.style.cssText = "position:fixed;inset:0;height:600px;background:#fff";
+			document.body.append(host);
+			type Item = { id: string; title: string; start: string; data: { load: () => string } };
+			const Cal = window.tnc.calendar.constructor as new (...a: unknown[]) => { setItems(i: Item[]): void; flush(): void };
+			const clicked: string[] = [];
+			const mounted: string[] = [];
+			const item = (version: string): Item => ({ id: "x", title: "Same", start: "2026-10-21T09:00", data: { load: () => version } });
+			const cal = new Cal(host, {
+				view: "week",
+				date: "2026-10-21",
+				onItemClick: (a: { item: Item }) => clicked.push(a.item.data.load()),
+				itemDidMount: () => mounted.push("mount"),
+			}, [item("v1")]);
+			cal.setItems([item("v2")]);
+			cal.flush();
+			host.querySelector<HTMLElement>('.tnc-item[data-id="x"]')!.click();
+			host.remove();
+			return { clicked, mounted };
+		});
+		// Functions do not serialise, so v2 draws the same: no remount, but the click sees v2.
+		expect(result).toEqual({ clicked: ["v2"], mounted: ["mount"] });
+	});
+
 	test("month: '+N more' opens a popover with every item that day", async ({ page }) => {
 		await open(page, "view=dayGridMonth");
 		const more = page.locator('.tnc-more').filter({ hasText: /more/ }).first();
@@ -143,6 +261,10 @@ test.describe("other views", () => {
 		await open(page, "view=listWeek");
 		await expect(page.locator(".tnc-list-section").first()).toHaveAttribute("data-date", "2026-10-21");
 		await expect(page.locator(".tnc-list-section")).toHaveCount(4); // 21st-24th have items; 25th-27th are empty
+		await open(page, "view=listWeek&listStart=week");
+		await expect(page.locator(".tnc-list-section").first()).toHaveAttribute("data-date", "2026-10-19");
+		await page.locator(".tnc-btn-next").click();
+		await expect(page.locator(".tnc-title")).toHaveText("26 Oct – 1 Nov 2026");
 		await open(page, "view=multiMonthYear");
 		await expect(page.locator(".tnc-ym")).toHaveCount(12);
 		await expect(page.locator('.tnc-ym-day[data-date="2026-10-21"]')).toHaveClass(/has-items/);
@@ -204,6 +326,28 @@ test("works in a popout window", async ({ page }) => {
 	await popup.mouse.move(box.x + 20, box.y + 10 + box.height, { steps: 6 });
 	await popup.mouse.up();
 	await expect.poll(() => popup.evaluate(() => (window as unknown as { log: string[] }).log[0])).toBe("2026-10-21T10:00");
+});
+
+test("@touch month: a long-press drag previews the item in the target cell", async ({ page }) => {
+	await open(page, "view=dayGridMonth");
+	const el = item(page, "span-1"); // Mon 19 – Wed 21
+	const box = (await el.boundingBox())!;
+	const source = (await page.locator('.tnc-dg-day[data-date="2026-10-19"]').boundingBox())!;
+	const target = (await page.locator('.tnc-dg-day[data-date="2026-10-20"]').boundingBox())!;
+	const cdp = await page.context().newCDPSession(page);
+	const touch = (type: "touchStart" | "touchMove" | "touchEnd", x: number, y: number) =>
+		cdp.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" ? [] : [{ x, y }] });
+	const x = box.x + 6;
+	const y = box.y + box.height / 2;
+	const dx = target.x - source.x;
+	await touch("touchStart", x, y);
+	await page.waitForTimeout(450);
+	for (let i = 1; i <= 6; i++) await touch("touchMove", x + (dx * i) / 6, y);
+	const mid = (await el.boundingBox())!;
+	expect(mid.x - box.x).toBeCloseTo(dx, -1);
+	expect(await lastLog(page, "drop")).toBeUndefined();
+	await touch("touchEnd", x + dx, y);
+	await expect.poll(() => lastLog(page, "drop")).toBe("drop span-1 2026-10-20 → 2026-10-23 (all-day)");
 });
 
 test("@touch long-press drags, a quick swipe scrolls", async ({ page }) => {

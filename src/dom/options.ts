@@ -2,6 +2,13 @@ import type { Day } from "../core/date";
 import type { ItemOrder } from "../core/layout";
 import type { CalendarItem, DateInput, DateRange, DependencyType } from "../core/types";
 
+/**
+ * How an item element is drawn: "timed" (time-grid block), "bar" (all-day or
+ * multi-day bar), "dot" (timed item in a day cell), "indicator" (a dot in a
+ * `monthDisplay: "dots"` cell), "list" (list-view row) or "timeline" (timeline bar).
+ */
+export type ItemVariant = "timed" | "bar" | "dot" | "indicator" | "list" | "timeline";
+
 export type ViewType = "week" | "day" | "days" | "month" | "list" | "year" | "timeline";
 
 export interface ViewInfo {
@@ -43,6 +50,13 @@ export interface ItemArg<D> {
 	isStart: boolean;
 	isEnd: boolean;
 	isMirror: boolean;
+	variant: ItemVariant;
+	/**
+	 * Time label in the calendar's locale and hour format: "9am – 10:30am" for
+	 * timed, list and timeline items; the start ("9am") for bars and dots, and
+	 * only on the day the item starts. Empty for all-day items.
+	 */
+	timeText: string;
 }
 
 export interface ItemPointerArg<D> extends ItemArg<D> {
@@ -107,6 +121,15 @@ export interface DayArg {
 	view: ViewInfo;
 	isToday: boolean;
 	isPast: boolean;
+}
+
+export interface DateClickArg extends DayArg {
+	/** Wall-clock minute of the clicked slot, snapped to `slotDuration`; null for day cells and the all-day row. */
+	minute: number | null;
+	allDay: boolean;
+	/** "YYYY-MM-DD" for all-day clicks, "YYYY-MM-DDTHH:mm" for slots. */
+	startStr: string;
+	jsEvent: MouseEvent | KeyboardEvent;
 }
 
 export interface DayHeaderArg extends DayArg {
@@ -258,6 +281,8 @@ export interface CalendarText {
 	allDay: string;
 	noItems: string;
 	more: (n: number) => string;
+	/** Day-cell label suffix in `monthDisplay: "dots"`. */
+	itemCount: (n: number) => string;
 	weekNumber: (n: number) => string;
 	views: Partial<Record<ViewType, string>>;
 	viewHints: Partial<Record<ViewType, string>>;
@@ -271,6 +296,20 @@ export interface CalendarOptions<D = unknown> {
 	dayCount: number;
 	/** Days in the "list" view. */
 	listDayCount: number;
+	/**
+	 * Where the "list" view starts: at the date ("date", FullCalendar's
+	 * `duration: { days: n }` lists, as the TaskNotes plugin used), or at the
+	 * start of its week ("week", like FullCalendar's stock `listWeek`).
+	 */
+	listStart: "date" | "week";
+	/**
+	 * Month cells: "full" draws bars and titled entries; "dots" draws every
+	 * item as a small dot that wraps across the cell, with a "+N" count when
+	 * they do not fit (`dayMaxEvents` caps the dots). In "dots" the day cell is
+	 * the tap target: dots ignore the pointer and are hidden from assistive
+	 * technology, and the cell is labelled with its item count.
+	 */
+	monthDisplay: "full" | "dots";
 	/** "local" or an IANA name. */
 	timeZone: string;
 	locale: string | undefined;
@@ -342,7 +381,8 @@ export interface CalendarOptions<D = unknown> {
 	canDrop?: (arg: { item: CalendarItem<D>; start: Date; end: Date; allDay: boolean; rowId?: string }) => boolean;
 	onSelect?: (arg: SelectArg) => void;
 	onUnselect?: () => void;
-	onDateClick?: (arg: DayArg & { jsEvent: MouseEvent | KeyboardEvent }) => void;
+	/** A tap or click on a day cell, the all-day row or a time slot (without dragging). */
+	onDateClick?: (arg: DateClickArg) => void;
 	/** Date links: day headers and numbers (`target: "day"`), year-view month titles (`"month"`). Default switches to that view. */
 	onNavLink?: (arg: DayArg & { target: "day" | "month"; jsEvent: MouseEvent | KeyboardEvent }) => void;
 	onExternalDrop?: (arg: ExternalDropArg<D>) => void;
@@ -351,7 +391,7 @@ export interface CalendarOptions<D = unknown> {
 	/** Return false to skip the built-in popover. */
 	onMoreClick?: (arg: MoreArg<D>) => boolean | void;
 
-	/* render hooks */
+	/* render hooks (indicators in `monthDisplay: "dots"` get class names and mount hooks, not content) */
 	itemContent?: (arg: ItemArg<D>) => Node | string | null | undefined;
 	itemClassNames?: (arg: ItemArg<D>) => string[] | string | undefined;
 	itemDidMount?: (arg: ItemArg<D>) => void;
@@ -370,6 +410,7 @@ export const DEFAULT_TEXT: CalendarText = {
 	allDay: "All day",
 	noItems: "Nothing scheduled",
 	more: (n) => `+${n} more`,
+	itemCount: (n) => (n === 1 ? "1 item" : `${n} items`),
 	weekNumber: (n) => `W${n}`,
 	views: { week: "Week", day: "Day", days: "Days", month: "Month", list: "List", year: "Year", timeline: "Timeline" },
 	viewHints: {},
@@ -381,6 +422,8 @@ export function defaultOptions<D>(): CalendarOptions<D> {
 		date: Date.now(),
 		dayCount: 3,
 		listDayCount: 7,
+		listStart: "date",
+		monthDisplay: "full",
 		timeZone: "local",
 		locale: undefined,
 		firstDay: undefined,
@@ -430,6 +473,8 @@ export const LAYOUT_KEYS = new Set<keyof CalendarOptions>([
 	"view",
 	"dayCount",
 	"listDayCount",
+	"listStart",
+	"monthDisplay",
 	"timeZone",
 	"locale",
 	"firstDay",

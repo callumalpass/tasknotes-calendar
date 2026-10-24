@@ -14,9 +14,25 @@ interface Week<D> {
 	sel: HTMLElement;
 	more: HTMLElement;
 	pool: ItemPool<D>;
+	/** `monthDisplay: "dots"`: one dot box per cell. */
+	dots: { box: HTMLElement; pool: ItemPool<D>; count: HTMLElement }[] | null;
 }
 
 const BAR_GAP = 2;
+/** Space below the last row of a day cell. */
+const CELL_PAD = 6;
+
+/** How many bar rows a day cell shows: `fit` when everything fits, `withMore` above a "+N more" link. */
+interface Limit {
+	fit: number;
+	withMore: number;
+}
+
+/** Reads a px length from a custom property. */
+function px(cs: CSSStyleDeclaration, name: string, fallback: number): number {
+	const v = parseFloat(cs.getPropertyValue(name));
+	return Number.isFinite(v) ? v : fallback;
+}
 
 /** Month view: weeks of day cells with items stacked in rows. */
 export class DayGridView<D> implements View {
@@ -26,11 +42,15 @@ export class DayGridView<D> implements View {
 	private weeks: Week<D>[] = [];
 	private resizeObs: ResizeObserver | null = null;
 	private barPx = 20;
+	private morePx = 20;
+	private topPx = 24;
 	private lastHeights = "";
+	private readonly dotsMode: boolean;
 
 	constructor(private readonly ctx: ViewContext<D>) {
 		const { doc, opts, days } = ctx;
-		this.el = h(doc, "div", "tnc-dg");
+		this.dotsMode = opts.monthDisplay === "dots";
+		this.el = h(doc, "div", this.dotsMode ? "tnc-dg tnc-dg--dots" : "tnc-dg");
 		this.scroller = h(doc, "div", "tnc-dg-scroll");
 		this.grid = h(doc, "div", "tnc-dg-grid", { role: "grid", "aria-label": ctx.view.title });
 		const perWeek = this.daysPerWeek();
@@ -79,17 +99,26 @@ export class DayGridView<D> implements View {
 			layer.append(sel, more);
 			row.append(layer);
 			this.grid.append(row);
-			this.weeks.push({ days: wdays, row, cells, layer, sel, more, pool: new ItemPool(ctx, layer) });
+			const dots = this.dotsMode
+				? cells.map((cell) => {
+						const box = h(doc, "div", "tnc-dg-dots", { "aria-hidden": "true" });
+						if (opts.dayMaxEvents === false) box.classList.add("is-unlimited");
+						const count = h(doc, "span", "tnc-dg-dots-more");
+						cell.append(box);
+						return { box, pool: new ItemPool(ctx, box), count };
+					})
+				: null;
+			this.weeks.push({ days: wdays, row, cells, layer, sel, more, pool: new ItemPool(ctx, layer), dots });
 		}
 		this.scroller.append(this.grid);
 		this.el.append(this.scroller);
 		this.el.classList.toggle("tnc-dg--auto", opts.height === "auto");
 
 		const RO = (ctx.win as Window & { ResizeObserver?: typeof ResizeObserver }).ResizeObserver;
-		if (RO && opts.dayMaxEvents === true) {
+		// Measured limits follow the cell size: row heights for bars, and the width too for dots.
+		if (RO && (opts.dayMaxEvents === true || (this.dotsMode && opts.dayMaxEvents !== false))) {
 			this.resizeObs = new RO(() => {
-				const key = this.weeks.map((w) => w.row.clientHeight).join(",");
-				if (key !== this.lastHeights) this.render(null);
+				if (this.sizeKey() !== this.lastHeights) this.render(null);
 			});
 			this.resizeObs.observe(this.grid);
 		}
@@ -104,25 +133,49 @@ export class DayGridView<D> implements View {
 		return n || 7;
 	}
 
+	private sizeKey(): string {
+		return `${this.grid.clientWidth}|${this.weeks.map((w) => w.row.clientHeight).join(",")}`;
+	}
+
 	render(_change: StoreChange | null): void {
 		const { ctx } = this;
 		const cs = ctx.win.getComputedStyle(this.el);
-		this.barPx = parseFloat(cs.getPropertyValue("--tnc-bar-h")) || 20;
-		this.lastHeights = this.weeks.map((w) => w.row.clientHeight).join(",");
-		for (const w of this.weeks) this.renderWeek(w);
+		this.barPx = px(cs, "--tnc-bar-h", 20);
+		this.topPx = this.weeks[0]?.cells[0]?.querySelector<HTMLElement>(".tnc-dg-top")?.offsetHeight || px(cs, "--tnc-dg-top-h", 24);
+		this.morePx = this.measureMore(cs);
+		this.lastHeights = this.sizeKey();
+		for (const w of this.weeks) {
+			if (w.dots) this.renderDots(w);
+			else this.renderWeek(w);
+		}
 	}
 
-	private limitFor(w: Week<D>): number {
+	/** Height of a "+N more" link as the host styles it (`--tnc-more-h`, or a taller min-height). */
+	private measureMore(cs: CSSStyleDeclaration): number {
+		const fallback = px(cs, "--tnc-more-h", this.barPx);
+		const layer = this.weeks[0]?.more;
+		if (this.dotsMode || !layer) return fallback;
+		const probe = h(this.ctx.doc, "button", "tnc-more", { type: "button", tabindex: "-1", "aria-hidden": "true" }, "+0");
+		probe.style.visibility = "hidden";
+		layer.append(probe);
+		const measured = probe.offsetHeight;
+		probe.remove();
+		return Math.max(fallback, measured);
+	}
+
+	private limitFor(w: Week<D>): Limit | null {
 		const { dayMaxEvents, dayMaxEventRows, height } = this.ctx.opts;
-		if (dayMaxEventRows > 0) return dayMaxEventRows;
-		if (typeof dayMaxEvents === "number" && dayMaxEvents > 0) return dayMaxEvents + 1;
-		if (dayMaxEvents === true) {
-			if (height === "auto") return 5;
-			const top = w.cells[0]?.querySelector<HTMLElement>(".tnc-dg-top")?.offsetHeight ?? 22;
-			const avail = w.row.clientHeight - top - 4;
-			return Math.max(1, Math.floor(avail / (this.barPx + BAR_GAP)));
-		}
-		return 0;
+		const rows = (n: number): Limit => ({ fit: n, withMore: n - 1 });
+		if (dayMaxEventRows > 0) return rows(dayMaxEventRows);
+		if (typeof dayMaxEvents === "number" && dayMaxEvents > 0) return rows(dayMaxEvents + 1);
+		if (dayMaxEvents !== true) return null;
+		if (height === "auto") return rows(5);
+		const step = this.barPx + BAR_GAP;
+		const avail = w.row.clientHeight - this.topPx - CELL_PAD;
+		return {
+			fit: Math.max(1, Math.floor((avail + BAR_GAP) / step)),
+			withMore: Math.max(0, Math.floor((avail - this.morePx) / step)),
+		};
 	}
 
 	private itemsFor(w: Week<D>): NormalizedItem<D>[] {
@@ -145,19 +198,24 @@ export class DayGridView<D> implements View {
 		const { ctx } = this;
 		const row = layoutRow(this.itemsFor(w), w.days, ctx.order);
 		const limit = this.limitFor(w);
-		const visible = (col: number) => (limit && (row.countByCol[col] ?? 0) > limit ? limit - 1 : limit || Infinity);
+		const visible = (col: number) => (!limit ? Infinity : (row.countByCol[col] ?? 0) > limit.fit ? limit.withMore : limit.fit);
 		const n = w.days.length;
 		const hidden = new Array<NormalizedItem<D>[]>(n).fill([]).map(() => [] as NormalizedItem<D>[]);
 		w.pool.begin();
 		let maxLevel = -1;
 		for (const p of row.placements) {
-			let show = true;
-			for (let c = p.startCol; c < p.endCol; c++) if (p.level >= visible(c)) show = false;
-			if (!show) {
-				for (let c = p.startCol; c < p.endCol; c++) hidden[c]!.push(p.item);
-				continue;
+			let level = p.level;
+			let room = Infinity;
+			for (let c = p.startCol; c < p.endCol; c++) room = Math.min(room, visible(c));
+			if (level >= room) {
+				// The item being dragged always shows, in the last row that has room, so the preview never hides behind "+N more".
+				if (p.item.id !== ctx.draggingId) {
+					for (let c = p.startCol; c < p.endCol; c++) hidden[c]!.push(p.item);
+					continue;
+				}
+				level = Math.max(0, room - 1);
 			}
-			maxLevel = Math.max(maxLevel, p.level);
+			maxLevel = Math.max(maxLevel, level);
 			const single = !p.item.allDay && p.item.endDay - p.item.startDay <= 1;
 			const el = w.pool.place(p.item.id, {
 				n: p.item,
@@ -170,7 +228,7 @@ export class DayGridView<D> implements View {
 			setStyle(el, {
 				left: `calc(${pct(p.startCol / n)} + 2px)`,
 				width: `calc(${pct((p.endCol - p.startCol) / n)} - 4px)`,
-				top: `calc(var(--tnc-dg-top-h) + ${p.level} * (var(--tnc-bar-h) + ${BAR_GAP}px))`,
+				top: `calc(var(--tnc-dg-top-h) + ${level} * (var(--tnc-bar-h) + ${BAR_GAP}px))`,
 			});
 		}
 		w.pool.end();
@@ -187,8 +245,63 @@ export class DayGridView<D> implements View {
 			link.addEventListener("click", (ev) => ctx.openMore(day, link, ev));
 			w.more.append(link);
 		});
-		const levels = maxLevel + 1 + (hidden.some((x) => x.length) ? 1 : 0);
-		w.row.style.setProperty("--tnc-levels", String(levels));
+		// Height the tallest cell needs: its bars, plus the "+N more" link at its real height.
+		const step = this.barPx + BAR_GAP;
+		let need = maxLevel >= 0 ? (maxLevel + 1) * step - BAR_GAP : 0;
+		hidden.forEach((items, col) => {
+			if (items.length) need = Math.max(need, visible(col) * step + this.morePx);
+		});
+		w.row.style.setProperty("--tnc-levels", String(maxLevel + 1));
+		w.row.style.setProperty("--tnc-dg-need", `${this.topPx + need + CELL_PAD}px`);
+	}
+
+	/** Items touching one day, all-day first, as a dot cell lists them. */
+	private itemsOn(day: Day): NormalizedItem<D>[] {
+		const { store } = this.ctx;
+		const out = store.spanningIn(day, day + 1, true);
+		const seen = new Set(out.map((n) => n.id));
+		for (const n of store.timedOn(day)) if (!seen.has(n.id)) out.push(n);
+		return out
+			.filter((n) => n.item.display !== "background" && n.item.display !== "none")
+			.sort((a, b) => Number(b.allDay) - Number(a.allDay) || this.ctx.order(a, b));
+	}
+
+	/** `monthDisplay: "dots"`: each cell wraps one dot per item, then "+N" for the rest. */
+	private renderDots(w: Week<D>): void {
+		const { ctx } = this;
+		const { dayMaxEvents } = ctx.opts;
+		const first = w.dots![0]!.box;
+		const cs = ctx.win.getComputedStyle(first);
+		const size = px(cs, "--tnc-dot-size", 8);
+		const gap = px(cs, "--tnc-dot-gap", 3);
+		const step = size + gap;
+		const perRow = Math.max(1, Math.floor((first.clientWidth + gap) / step));
+		const rows = Math.max(1, Math.floor((first.clientHeight + gap) / step));
+		const fits = dayMaxEvents === false ? Infinity : perRow * rows;
+		const cap = typeof dayMaxEvents === "number" && dayMaxEvents > 0 ? Math.min(dayMaxEvents, fits) : fits;
+		w.row.style.setProperty("--tnc-levels", "0");
+		w.row.style.removeProperty("--tnc-dg-need");
+		w.days.forEach((day, i) => {
+			const cell = w.dots![i]!;
+			const items = this.itemsOn(day);
+			// "+N" takes about two dot slots when the cell is full.
+			const shown = items.length <= cap ? items.length : cap >= fits ? Math.max(0, cap - 2) : cap;
+			cell.pool.begin();
+			const els = items
+				.slice(0, shown)
+				.map((n) => cell.pool.place(n.id, { n, day, isStart: n.startDay >= day, isEnd: n.endDay <= day + 1, variant: "indicator", mirror: false }));
+			cell.pool.end();
+			// Keep DOM order equal to item order.
+			els.forEach((el, k) => {
+				if (cell.box.children[k] !== el) cell.box.insertBefore(el, cell.box.children[k] ?? null);
+			});
+			const rest = items.length - shown;
+			cell.count.textContent = rest > 0 ? `+${rest}` : "";
+			if (rest > 0) cell.box.append(cell.count);
+			else cell.count.remove();
+			const label = ctx.fmt.longDate(day);
+			w.cells[i]!.setAttribute("aria-label", items.length ? `${label}, ${ctx.text.itemCount(items.length)}` : label);
+		});
 	}
 
 	showSelection(sel: Selection | null): void {
@@ -228,12 +341,15 @@ export class DayGridView<D> implements View {
 	}
 
 	elementsFor(id: string): HTMLElement[] {
-		return this.weeks.flatMap((w) => w.pool.elementsFor(id));
+		return this.weeks.flatMap((w) => [...w.pool.elementsFor(id), ...(w.dots ?? []).flatMap((c) => c.pool.elementsFor(id))]);
 	}
 
 	destroy(): void {
 		this.resizeObs?.disconnect();
-		for (const w of this.weeks) w.pool.clear();
+		for (const w of this.weeks) {
+			w.pool.clear();
+			for (const c of w.dots ?? []) c.pool.clear();
+		}
 		this.el.remove();
 	}
 }

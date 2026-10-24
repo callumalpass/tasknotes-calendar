@@ -141,6 +141,9 @@ export function basesLayoutOptions<D>(
 		view,
 		dayCount: clamp(Math.round(num(s.customDayCount, d.customDayCount)), 1, 14),
 		listDayCount: clamp(Math.round(num(s.listDayCount, d.listDayCount)), 1, 365),
+		// The plugin overrode FullCalendar's listWeek with `duration: { days: listDayCount }`,
+		// which aligns to the day (not the week), so saved list views start at the date.
+		listStart: "date",
 		height: context.embedded || s.heightMode === "auto" ? "auto" : "fill",
 		expandRows: !(context.embedded || s.heightMode === "auto"),
 		firstDay: clamp(Math.round(num(s.firstDay, 1)), 0, 6),

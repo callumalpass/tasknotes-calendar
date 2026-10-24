@@ -18,10 +18,19 @@ calendar.setItems([{ id: "t1", title: "Plan sprint", start: "2026-10-21T10:00", 
 ```
 
 - **Items** take `start`/`end` as `YYYY-MM-DD` (all-day) or `YYYY-MM-DDTHH:mm` (floating, read in the calendar's zone), ISO strings with an offset, or epoch ms. `end` is exclusive. Optional fields: `allDay`, `color`, `kind`, `lane` (`"plan"`/`"actual"`), `display: "background"`, `completed`, `dependsOn`, `rev` (cheap change signature), `data`.
-- **Updates** are incremental: `setItems` diffs against the previous set, and `upsertItems`/`removeItems` re-render only the days touched. Render hooks (`itemDidMount`, …) fire only for elements that actually change.
+- **Updates** are incremental: `setItems` diffs against the previous set, and `upsertItems`/`removeItems` re-render only the days touched. Render hooks (`itemDidMount`, …) fire only for elements that actually change, but every callback's `item` is the object most recently passed in for that id, so `item.data` is never stale.
+- **Render hooks** (`itemContent`, `itemClassNames`, `itemDidMount`, `itemWillUnmount`, `listItemContent`) get `variant` (`"timed"`, `"bar"`, `"dot"`, `"indicator"`, `"list"`, `"timeline"`) and `timeText`, the time label in the calendar's locale and hour format (`"9am – 10:30am"` for timed, list and timeline items, the start for bars and dots, empty for all-day items).
+- **Drags** move the item itself with the pointer in every view (time grid, all-day row, month, timeline), for mouse and touch; the dragged item is never folded into "+N more".
 - **Changes** (`onItemDrop`, `onItemResize`, `onSelect`, `onExternalDrop`) report TaskNotes storage strings (`startStr`/`endStr`), `revert()`, and `source: "pointer" | "keyboard"`. Returning a rejected promise reverts.
+- **Clicks**: `onDateClick` reports `minute` (the slot's wall-clock minute, snapped to `slotDuration`; null for day cells and the all-day row), `allDay` and `startStr` (`"YYYY-MM-DD"` or `"YYYY-MM-DDTHH:mm"`), so a tap on a slot can prefill a time.
 - **Input**: mouse drag after 4px, touch long press (`longPressDelay`), keyboard (Enter/Space, Shift+F10, Alt+Arrow to move, Alt+Shift+Arrow to resize), external drags via `beginExternalDrag` or native HTML5 drops.
 - **Popouts**: all listeners, timers and observers use the host element's `ownerDocument`; bare `window`/`document` are lint errors in `src`.
+
+### Month and list
+
+- `monthDisplay: "dots"` draws every item in a month cell as a small dot (`--tnc-dot-size`, `--tnc-dot-gap`) that wraps across the cell, with "+N" when they do not fit; `dayMaxEvents` caps the dots (`false` lets cells grow). The day cell is the tap target: dots ignore the pointer, are `aria-hidden`, get no content hook, and the cell is labelled "<date>, N items" (`text.itemCount`). Items in dots have `variant: "indicator"`; colour them with `color` or `itemDidMount` setting `--tnc-c`.
+- **"+N more" height**: day rows (and the time grid's all-day row) make room for the link at its rendered height, so a host may give it a 44px touch target (`--tnc-more-h`, or any min-height) without overflowing the row.
+- `listStart: "date" | "week"`: the list view starts at the date (default; FullCalendar `duration: { days: n }` lists, as the TaskNotes plugin and app used) or at the start of its week (FullCalendar's stock `listWeek`); week-aligned lists step by whole weeks.
 
 ### Timeline
 
@@ -41,7 +50,7 @@ calendar.setItems([{ id: "t1", title: "Plan sprint", start: "2026-10-21T10:00", 
 
 ### TaskNotes Bases settings
 
-`basesLayoutOptions(settings)` maps the settings stored by the TaskNotes plugin's Bases calendar view (`viewFromBases`/`viewToBases` translate the FullCalendar view names held in `.base` files) to calendar options, applying the plugin's normalisation so existing settings keep their meaning. See `docs/integration/plugin-bases-calendar-spec.md`.
+`basesLayoutOptions(settings)` maps the settings stored by the TaskNotes plugin's Bases calendar view (`viewFromBases`/`viewToBases` translate the FullCalendar view names held in `.base` files) to calendar options, applying the plugin's normalisation so existing settings keep their meaning. Saved `listWeek` views keep starting at the date (`listStart: "date"`): the plugin configured FullCalendar's list as `duration: { days: listDayCount }`, which aligns to the day, not the week. See `docs/integration/plugin-bases-calendar-spec.md`.
 
 ## Development
 
@@ -54,4 +63,4 @@ npm run lint && npm run typecheck
 npm run build             # dist/esm, dist/types, dist/calendar.css
 ```
 
-The playground reads URL parameters (`view`, `tz`, `locale`, `date`, `theme`, `stress`, `height`, `capacity`) and exposes `window.tnc` for scripted checks.
+The playground reads URL parameters (`view`, `tz`, `locale`, `date`, `theme`, `stress`, `height`, `capacity`, `display=dots`, `listStart=week`) and exposes `window.tnc` for scripted checks.

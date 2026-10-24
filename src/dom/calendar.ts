@@ -490,7 +490,8 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		if (n.allDay) el.classList.add("is-all-day");
 		if (meta.mirror || n.id === EXTERNAL_ID) el.classList.add("is-mirror");
 		if (this.conflicts.has(n.id)) el.classList.add("is-conflict");
-		if (!meta.mirror && (this.isEditable(n, "start") || this.isEditable(n, "duration"))) el.classList.add("is-draggable");
+		const indicator = variant === "indicator";
+		if (!meta.mirror && !indicator && (this.isEditable(n, "start") || this.isEditable(n, "duration"))) el.classList.add("is-draggable");
 		if (this.draggingId === n.id) el.classList.add("is-dragging");
 		if (this.selectedIds.has(n.id) && !meta.mirror) el.classList.add("is-selected");
 		el.classList.add(...classList(it.className));
@@ -503,7 +504,8 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		if (it.backgroundColor) el.style.setProperty("--tnc-bg", it.backgroundColor);
 		if (it.borderColor) el.style.setProperty("--tnc-border", it.borderColor);
 		if (it.textColor) el.style.setProperty("--tnc-fg", it.textColor);
-		if (it.display !== "background") {
+		if (indicator) el.setAttribute("aria-hidden", "true");
+		else if (it.display !== "background") {
 			el.tabIndex = 0;
 			el.setAttribute("role", "button");
 			el.setAttribute("aria-label", this.ariaLabel(n));
@@ -511,15 +513,17 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		this.meta.set(el, meta);
 
 		const custom = variant === "list" ? this.opts.listItemContent?.(arg) : null;
-		const content = custom ?? this.opts.itemContent?.(arg);
-		if (content != null) {
+		const content = indicator ? null : (custom ?? this.opts.itemContent?.(arg));
+		if (indicator) {
+			// A dot only; the cell around it is the target.
+		} else if (content != null) {
 			const wrap = h(this.doc, "div", "tnc-item-main");
 			wrap.append(content);
 			el.append(wrap);
 		} else {
 			el.append(this.defaultContent(meta));
 		}
-		if (variant !== "list" && it.display !== "background") this.addHandles(el, meta);
+		if (variant !== "list" && !indicator && it.display !== "background") this.addHandles(el, meta);
 		this.opts.itemDidMount?.(arg);
 		return el;
 	}
@@ -638,8 +642,11 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 				return this.anchor + dir * Math.max(1, dayCount);
 			case "week":
 				return this.anchor + dir * 7;
-			case "list":
-				return this.anchor + dir * Math.max(1, listDayCount);
+			case "list": {
+				const n = Math.max(1, listDayCount);
+				// Week-aligned lists step whole weeks so the start stays on a week boundary.
+				return this.anchor + dir * (this.opts.listStart === "week" ? Math.ceil(n / 7) * 7 : n);
+			}
 			case "month":
 				return addMonths(startOfMonth(this.anchor), dir);
 			case "year":
@@ -663,8 +670,10 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 				const s = startOfWeek(a, this.firstDay);
 				return { startDay: s, endDay: s + 7 };
 			}
-			case "list":
-				return { startDay: a, endDay: a + Math.max(1, listDayCount) };
+			case "list": {
+				const s = this.opts.listStart === "week" ? startOfWeek(a, this.firstDay) : a;
+				return { startDay: s, endDay: s + Math.max(1, listDayCount) };
+			}
 			case "month": {
 				const s = startOfWeek(startOfMonth(a), this.firstDay);
 				return { startDay: s, endDay: s + 42 };
@@ -852,7 +861,20 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	/* ========================================================= item content */
 
 	private itemArg(el: HTMLElement, meta: ElMeta<D>): ItemArg<D> {
-		return { item: meta.n.item, el, view: this.view, day: meta.day, isStart: meta.isStart, isEnd: meta.isEnd, isMirror: meta.mirror };
+		// The store holds the latest object passed in for an id, even when it draws the same.
+		const item = this.store.get(meta.n.id)?.item ?? meta.n.item;
+		const { start, end } = this.timeLabel(meta.n, meta.variant, meta.day);
+		return {
+			item,
+			el,
+			view: this.view,
+			day: meta.day,
+			isStart: meta.isStart,
+			isEnd: meta.isEnd,
+			isMirror: meta.mirror,
+			variant: meta.variant,
+			timeText: meta.n.allDay ? "" : end ? `${start} – ${end}` : start,
+		};
 	}
 
 	/** Start and (for timed and list items) end labels; the end is hidden on short items by CSS. */
@@ -860,7 +882,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		if (n.allDay) return { start: variant === "list" ? this.text.allDay : "", end: "" };
 		const s = wallTime(n.startMs, this.zone);
 		const start = this.fmt.time(s.minute, true);
-		if (variant === "dot" || variant === "bar") return { start: s.day === day ? start : "", end: "" };
+		if (variant === "dot" || variant === "bar" || variant === "indicator") return { start: s.day === day ? start : "", end: "" };
 		if (n.startMs === n.endMs) return { start, end: "" };
 		return { start, end: this.fmt.time(wallTime(n.endMs, this.zone).minute, true) };
 	}
@@ -1340,7 +1362,8 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 			start: p.allDay ? formatDay(p.startDay) : p.startMs,
 			end: p.allDay ? formatDay(p.endDay) : p.endMs,
 			allDay: p.allDay,
-			rev: `drag:${o.sig}`,
+			// Unique per proposal, so the store redraws the item wherever the pointer takes it.
+			rev: `drag:${p.startMs}:${p.endMs}:${p.allDay ? 1 : 0}:${p.rowId ?? ""}:${o.sig}`,
 		};
 	}
 
@@ -1369,7 +1392,22 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	private clickSlot(hit: Hit, ev: PointerEvent, touch: boolean): void {
 		if (hit.kind === "timeline" && !hit.overTrack) return;
 		const day = hit.day;
-		this.opts.onDateClick?.({ ...this.dayArg(day), jsEvent: ev });
+		if (this.opts.onDateClick) {
+			let minute: number | null = null;
+			if (hit.kind === "time") minute = Math.floor(hit.minute / this.slot.duration) * this.slot.duration;
+			else if (hit.kind === "timeline" && this.timelineSnap() < MINUTES_PER_DAY) minute = Math.floor(hit.minute / this.timelineSnap()) * this.timelineSnap();
+			// Grids past midnight ("26:00") report the next day's wall clock.
+			const civil = day * MINUTES_PER_DAY + (minute ?? 0);
+			const at = Math.floor(civil / MINUTES_PER_DAY);
+			const startStr = minute === null ? formatDay(day) : formatFloating(this.civilToMs(civil), this.zone);
+			this.opts.onDateClick({
+				...this.dayArg(minute === null ? day : at),
+				minute: minute === null ? null : civil - at * MINUTES_PER_DAY,
+				allDay: minute === null,
+				startStr,
+				jsEvent: ev,
+			});
+		}
 		if (touch || !this.opts.selectable) return;
 		const sel =
 			hit.kind === "time"

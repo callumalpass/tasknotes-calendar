@@ -69,6 +69,8 @@ function options(): Opts {
 		locale: params.get("locale") ?? base.locale,
 		date: params.get("date") ?? undefined,
 		capacityMinutes: capacity ? 6 * 60 : null,
+		monthDisplay: params.get("display") === "dots" ? "dots" : "full",
+		...(params.get("listStart") === "week" ? { listStart: "week" as const } : {}),
 		toolbar: { views: ["month", "week", "days", "day", "list", "year", "timeline"] },
 		timeline: {
 			rows: timeline.rows,
@@ -152,7 +154,7 @@ const calendar = new Calendar<DemoData>(host, {
 			calendar.unselect();
 		}
 	},
-	onDateClick: (arg) => record(`dateclick ${arg.dateStr}`),
+	onDateClick: (arg) => record(`dateclick ${arg.startStr}`),
 	onRangeChange: (view) => {
 		record(`range ${view.type} ${formatDay(view.range.startDay)} → ${formatDay(view.range.endDay)}`);
 		syncItems();

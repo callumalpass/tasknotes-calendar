@@ -257,13 +257,18 @@ export class TimeGridView<D> implements View {
 		const hidden = new Array<number>(days.length).fill(0);
 		let maxLevel = -1;
 		for (const p of row.placements) {
-			let show = true;
-			for (let c = p.startCol; c < p.endCol; c++) if (p.level >= visibleLevels(c)) show = false;
-			if (!show) {
-				for (let c = p.startCol; c < p.endCol; c++) hidden[c]!++;
-				continue;
+			let level = p.level;
+			let room = Infinity;
+			for (let c = p.startCol; c < p.endCol; c++) room = Math.min(room, visibleLevels(c));
+			if (level >= room) {
+				// The item being dragged always shows, in the last row that has room, so the preview never hides behind "+N more".
+				if (p.item.id !== ctx.draggingId) {
+					for (let c = p.startCol; c < p.endCol; c++) hidden[c]!++;
+					continue;
+				}
+				level = Math.max(0, room - 1);
 			}
-			maxLevel = Math.max(maxLevel, p.level);
+			maxLevel = Math.max(maxLevel, level);
 			const el = pool.place(p.item.id, {
 				n: p.item,
 				day: days[p.startCol]!,
@@ -275,7 +280,7 @@ export class TimeGridView<D> implements View {
 			setStyle(el, {
 				left: `calc(${pct(offsets[p.startCol]!)} + 2px)`,
 				width: `calc(${pct(offsets[p.endCol]! - offsets[p.startCol]!)} - 4px)`,
-				top: `calc(${p.level} * (var(--tnc-bar-h) + ${BAR_GAP}px) + 3px)`,
+				top: `calc(${level} * (var(--tnc-bar-h) + ${BAR_GAP}px) + 3px)`,
 			});
 		}
 		pool.end();
@@ -294,8 +299,15 @@ export class TimeGridView<D> implements View {
 			link.addEventListener("click", (ev) => ctx.openMore(day, link, ev));
 			this.allDayMore!.append(link);
 		});
-		const levels = Math.max(maxLevel + 1, anyMore ? Math.min(limit, row.levels) : 0);
-		this.allDayLayer.style.height = `calc(${Math.max(1, levels)} * (var(--tnc-bar-h) + ${BAR_GAP}px) + 6px)`;
+		// Room for the bars, and for "+N more" links at their real height (hosts may make them taller).
+		const bars = `calc(${Math.max(1, maxLevel + 1)} * (var(--tnc-bar-h) + ${BAR_GAP}px) + 6px)`;
+		if (!anyMore) {
+			this.allDayLayer.style.height = bars;
+			return;
+		}
+		const moreH = this.allDayMore.querySelector<HTMLElement>(".tnc-more")?.offsetHeight ?? 0;
+		const moreTop = Math.max(...hidden.map((count, col) => (count ? visibleLevels(col) : 0)));
+		this.allDayLayer.style.height = `max(${bars}, calc(${moreTop} * (var(--tnc-bar-h) + ${BAR_GAP}px) + ${moreH}px + 6px))`;
 	}
 
 	private allDayLimit(): number {

@@ -4,9 +4,9 @@ import type { ItemStore, StoreChange } from "../core/store";
 import type { NormalizedItem } from "../core/types";
 import type { TimeZone } from "../core/zone";
 import type { Formatter } from "./format";
-import type { CalendarOptions, CalendarText, DayArg, Hit, ViewInfo } from "./options";
+import type { CalendarOptions, CalendarText, DayArg, Hit, ItemVariant, ViewInfo } from "./options";
 
-export type Variant = "timed" | "bar" | "dot" | "list" | "timeline";
+export type Variant = ItemVariant;
 
 export interface ElMeta<D = unknown> {
 	n: NormalizedItem<D>;

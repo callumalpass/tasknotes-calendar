@@ -190,7 +190,11 @@ export class ItemStore<D = unknown> {
 	private upsertOne(item: CalendarItem<D>): void {
 		const prev = this.items.get(item.id);
 		if (prev) {
-			if (prev.sig === signature(item)) return;
+			if (prev.sig === signature(item)) {
+				// Same drawing, nothing to re-render, but callbacks get the object passed in last.
+				if (prev.item !== item) this.items.set(item.id, { ...prev, item });
+				return;
+			}
 			this.unindex(prev);
 			this.items.delete(item.id);
 			if (!this.insert(item, "updated")) this.pending.removed.push(item.id);
