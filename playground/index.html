@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>@tasknotes/calendar playground</title>
+<link rel="stylesheet" href="dist/calendar.css">
+<link rel="stylesheet" href="playground.css">
+</head>
+<body>
+<div id="app">
+	<aside id="side">
+		<header><b>@tasknotes/calendar</b><span id="perf"></span></header>
+		<section>
+			<h2>Unscheduled <small>drag onto the calendar</small></h2>
+			<div id="tray"></div>
+		</section>
+		<section>
+			<h2>Bases view options</h2>
+			<form id="opts"></form>
+		</section>
+		<section>
+			<h2>Callbacks</h2>
+			<ol id="log" aria-live="polite"></ol>
+		</section>
+	</aside>
+	<main id="main"><div id="cal"></div></main>
+</div>
+<script type="module" src="dist/main.js"></script>
+</body>
+</html>
