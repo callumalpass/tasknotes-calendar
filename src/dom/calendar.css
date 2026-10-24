@@ -253,6 +253,12 @@
 	white-space: nowrap;
 	display: block;
 }
+.tnc-item--timed.is-short .tnc-item-time {
+	flex: none;
+}
+.tnc-item--timed.is-short .tnc-item-time-end {
+	display: none;
+}
 .tnc-item--timed.is-cont-start {
 	border-top-left-radius: 0;
 	border-top-right-radius: 0;
@@ -306,7 +312,10 @@
 	border-right-style: dashed;
 }
 
-/* dots (timed items in day cells) */
+/* dots (timed items in day cells); dots have no border, even when a host sets a border style */
+.tnc-item.tnc-item--dot {
+	border-width: 0;
+}
 .tnc-item--dot {
 	height: var(--tnc-bar-h);
 	padding: 0 4px;

@@ -384,7 +384,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 
 	navigate(day: Day, jsEvent: MouseEvent | KeyboardEvent, view: "day" | "month" = "day"): void {
 		if (this.opts.onNavLink) {
-			this.opts.onNavLink({ ...this.dayArg(day), jsEvent });
+			this.opts.onNavLink({ ...this.dayArg(day), target: view, jsEvent });
 			return;
 		}
 		this.changeView(view, formatDay(day));
@@ -439,7 +439,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 
 	refreshItemEl(el: HTMLElement, meta: ElMeta<D>): void {
 		const time = el.querySelector<HTMLElement>(":scope .tnc-item-time");
-		if (time) time.textContent = this.timeLabel(meta.n, meta.variant, meta.day);
+		if (time) this.fillTime(time, meta.n, meta.variant, meta.day);
 		el.classList.toggle("is-dragging", this.draggingId === meta.n.id);
 		el.classList.toggle("is-conflict", this.conflicts.has(meta.n.id));
 	}
@@ -745,15 +745,21 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		return { item: meta.n.item, el, view: this.view, day: meta.day, isStart: meta.isStart, isEnd: meta.isEnd, isMirror: meta.mirror };
 	}
 
-	private timeLabel(n: NormalizedItem<D>, variant: ElMeta["variant"], day: Day): string {
-		if (n.allDay) return variant === "list" ? this.text.allDay : "";
+	/** Start and (for timed and list items) end labels; the end is hidden on short items by CSS. */
+	private timeLabel(n: NormalizedItem<D>, variant: ElMeta["variant"], day: Day): { start: string; end: string } {
+		if (n.allDay) return { start: variant === "list" ? this.text.allDay : "", end: "" };
 		const s = wallTime(n.startMs, this.zone);
-		const e = wallTime(n.endMs, this.zone);
 		const start = this.fmt.time(s.minute, true);
-		if (variant === "dot") return s.day === day ? start : "";
-		if (variant === "bar") return s.day === day ? start : "";
-		if (n.startMs === n.endMs) return start;
-		return `${start} – ${this.fmt.time(e.minute, true)}`;
+		if (variant === "dot" || variant === "bar") return { start: s.day === day ? start : "", end: "" };
+		if (n.startMs === n.endMs) return { start, end: "" };
+		return { start, end: this.fmt.time(wallTime(n.endMs, this.zone).minute, true) };
+	}
+
+	private fillTime(el: HTMLElement, n: NormalizedItem<D>, variant: ElMeta["variant"], day: Day): boolean {
+		const { start, end } = this.timeLabel(n, variant, day);
+		el.textContent = start;
+		if (end) el.append(h(this.doc, "span", "tnc-item-time-end", null, ` – ${end}`));
+		return start !== "";
 	}
 
 	private ariaLabel(n: NormalizedItem<D>): string {
@@ -771,8 +777,8 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		const doc = this.doc;
 		const main = h(doc, "div", "tnc-item-main");
 		const title = h(doc, "span", "tnc-item-title", null, n.item.title);
-		const label = this.timeLabel(n, variant, day);
-		const time = h(doc, "span", "tnc-item-time", null, label);
+		const time = h(doc, "span", "tnc-item-time");
+		const label = this.fillTime(time, n, variant, day);
 		switch (variant) {
 			case "timed":
 				main.append(title, time);

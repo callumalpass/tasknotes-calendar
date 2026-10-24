@@ -54,7 +54,7 @@ export interface ItemChangeArg<D> {
 	source: "pointer" | "keyboard";
 	view: ViewInfo;
 	/** Puts the item back where it was. Called automatically if the handler's promise rejects. */
-	revert(): void;
+	revert: () => void;
 }
 
 export interface SelectArg {
@@ -250,8 +250,8 @@ export interface CalendarOptions<D = unknown> {
 	onSelect?: (arg: SelectArg) => void;
 	onUnselect?: () => void;
 	onDateClick?: (arg: DayArg & { jsEvent: MouseEvent | KeyboardEvent }) => void;
-	/** Date links (day headers, day numbers). Default navigates to the day view. */
-	onNavLink?: (arg: DayArg & { jsEvent: MouseEvent | KeyboardEvent }) => void;
+	/** Date links: day headers and numbers (`target: "day"`), year-view month titles (`"month"`). Default switches to that view. */
+	onNavLink?: (arg: DayArg & { target: "day" | "month"; jsEvent: MouseEvent | KeyboardEvent }) => void;
 	onExternalDrop?: (arg: ExternalDropArg<D>) => void;
 	/** Return false to skip the built-in popover. */
 	onMoreClick?: (arg: MoreArg<D>) => boolean | void;
