@@ -148,12 +148,15 @@ export function demoTimeline(today: number): { rows: TimelineRow[]; items: Calen
 		items.push({ id: launch, title: "Launch", start: formatDay(start + 1), allDay: true, kind: "milestone", color: p.color, dependsOn: [prev!], data: { kind: "due", project: p.id } });
 		offset += 9;
 	}
-	// One deliberate conflict: QA starts before Build ends.
-	const qa = items.find((i) => i.id === "p-app-qa");
-	if (qa) {
+	// Both QA tasks overlap Build: the website's is start-to-start, so it holds;
+	// the app's is finish-to-start, so it is a deliberate conflict.
+	for (const id of ["p-web-qa", "p-app-qa"]) {
+		const qa = items.find((i) => i.id === id);
+		if (!qa) continue;
 		const s0 = parseDay(String(qa.start))! - 3;
 		qa.start = formatDay(s0);
 		qa.end = formatDay(s0 + 4);
+		if (id === "p-web-qa") qa.dependsOn = [{ id: "p-web-build", type: "SS" }];
 	}
 	return { rows, items };
 }

@@ -61,6 +61,8 @@ export interface ViewContext<D = unknown> {
 	openMore(day: Day, anchor: HTMLElement, jsEvent: MouseEvent | KeyboardEvent): void;
 	/** Follows a date link: `onNavLink`, or switches to `view` at `day`. */
 	navigate(day: Day, jsEvent: MouseEvent | KeyboardEvent, view?: "day" | "month"): void;
+	/** Swallows the click that follows a drag the view handled itself. */
+	suppressNextClick(): void;
 	/** Row override for the item being dragged in the timeline. */
 	readonly dragRow: { id: string; rowId: string } | null;
 }
@@ -87,6 +89,12 @@ export interface View {
  * only rebuilt when the item's signature changes, so mount hooks fire once per
  * real change.
  */
+/** Selector for a focusable part of an item element, by its tnc- classes. */
+function focusKey(el: Element): string {
+	const cls = [...el.classList].filter((c) => c.startsWith("tnc-"));
+	return cls.length ? cls.map((c) => `.${CSS.escape(c)}`).join("") : "";
+}
+
 export class ItemPool<D> {
 	private readonly recs = new Map<string, { el: HTMLElement; sig: string }>();
 	private used = new Set<string>();
@@ -103,7 +111,11 @@ export class ItemPool<D> {
 	place(key: string, meta: ElMeta<D>): HTMLElement {
 		const sig = `${meta.n.sig}|${meta.variant}|${meta.isStart ? 1 : 0}${meta.isEnd ? 1 : 0}|${meta.mirror ? 1 : 0}`;
 		let rec = this.recs.get(key);
+		// A rebuilt element takes over keyboard focus from the one it replaces.
+		let refocus: string | null = null;
 		if (rec && rec.sig !== sig) {
+			const active = this.ctx.doc.activeElement;
+			if (active && rec.el.contains(active)) refocus = active === rec.el ? "" : focusKey(active);
 			this.ctx.destroyItemEl(rec.el);
 			rec = undefined;
 		}
@@ -111,6 +123,7 @@ export class ItemPool<D> {
 			rec = { el: this.ctx.createItemEl(meta), sig };
 			this.recs.set(key, rec);
 			this.container.append(rec.el);
+			if (refocus !== null) (refocus ? rec.el.querySelector<HTMLElement>(refocus) : rec.el)?.focus({ preventScroll: true });
 		} else {
 			this.ctx.meta.set(rec.el, meta);
 			this.ctx.refreshItemEl(rec.el, meta);

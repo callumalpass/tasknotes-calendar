@@ -1,6 +1,6 @@
 import type { Day } from "./date";
 import type { ItemStore } from "./store";
-import type { NormalizedItem } from "./types";
+import type { CalendarItem, DependencyType, NormalizedItem } from "./types";
 import { toInstant, type TimeZone } from "./zone";
 
 /** Minutes of planned (timed, plan-lane, non-background) work on each day. */
@@ -20,15 +20,37 @@ export function plannedMinutes<D>(store: ItemStore<D>, days: Day[]): Map<Day, nu
 	return out;
 }
 
-/** Items that start before something they depend on has finished. */
+/** An item's dependencies with their relationship types resolved ("FS" by default). */
+export function itemDependencies(item: Pick<CalendarItem, "dependsOn">): { id: string; type: DependencyType }[] {
+	return (item.dependsOn ?? []).map((d) => (typeof d === "string" ? { id: d, type: "FS" } : { id: d.id, type: d.type ?? "FS" }));
+}
+
+/** The relationship created by linking a predecessor edge to a successor edge. */
+export function dependencyType(fromEdge: "start" | "finish", toEdge: "start" | "finish"): DependencyType {
+	return `${fromEdge === "start" ? "S" : "F"}${toEdge === "start" ? "S" : "F"}` as DependencyType;
+}
+
+/** Whether a relationship holds: the successor's edge is not before the predecessor's. */
+export function dependencySatisfied(
+	type: DependencyType,
+	pred: { startMs: number; endMs: number },
+	succ: { startMs: number; endMs: number },
+): boolean {
+	const from = type[0] === "S" ? pred.startMs : pred.endMs;
+	const to = type[1] === "S" ? succ.startMs : succ.endMs;
+	return from <= to;
+}
+
+/** Items whose relationships are broken, mapped to the ids of the predecessors they break. */
 export function dependencyConflicts<D>(store: ItemStore<D>): Map<string, string[]> {
 	const out = new Map<string, string[]>();
 	for (const n of store.all()) {
-		for (const dep of n.item.dependsOn ?? []) {
-			const d = store.get(dep);
-			if (!d || d.endMs <= n.startMs) continue;
+		if (!n.item.dependsOn?.length) continue;
+		for (const dep of itemDependencies(n.item)) {
+			const d = store.get(dep.id);
+			if (!d || dependencySatisfied(dep.type, d, n)) continue;
 			const list = out.get(n.id) ?? [];
-			list.push(dep);
+			list.push(dep.id);
 			out.set(n.id, list);
 		}
 	}

@@ -58,6 +58,7 @@ const layout: BasesCalendarLayout = {
 };
 let playgroundView: ViewType | null = params.get("view") === "timeline" ? "timeline" : null;
 let capacity = params.get("capacity") !== "0";
+let selected: string | null = null;
 
 function options(): Opts {
 	const base = basesLayoutOptions<DemoData>(layout);
@@ -76,12 +77,24 @@ function options(): Opts {
 			days: 75,
 			leadDays: 14,
 			scale: { unit: "day", unitWidth: 34, snapMinutes: 1440 },
-			onLink: ({ from, to }) => {
-				record(`link ${from.id} -> ${to.id}`);
-				timelineItems = timelineItems.map((i) => (i.id === to.id ? { ...i, dependsOn: [...(i.dependsOn ?? []), from.id] } : i));
+			todayLabel: "Today",
+			resizeHandleLabel: ({ item, edge }) => `Change ${item.title} ${edge === "start" ? "start" : "end"}`,
+			canLink: ({ from, to }) =>
+				timelineItems.some((i) => i.id === from.id && i.dependsOn?.some((d) => (typeof d === "string" ? d : d.id) === to.id))
+					? "That would create a cycle"
+					: true,
+			onLinkDrag: (arg) => {
+				if (arg.phase === "end" && arg.to && !arg.valid) record(`link refused: ${arg.reason ?? "invalid"}`);
+			},
+			onLink: ({ from, to, type }) => {
+				record(`link ${from.id} ${type} -> ${to.id}`);
+				timelineItems = timelineItems.map((i) =>
+					i.id === to.id ? { ...i, dependsOn: [...(i.dependsOn ?? []).filter((d) => (typeof d === "string" ? d : d.id) !== from.id), { id: from.id, type }] } : i,
+				);
 				syncItems();
 			},
 		},
+		selected,
 	};
 }
 
@@ -120,7 +133,11 @@ const calendar = new Calendar<DemoData>(host, {
 	...options(),
 	onItemDrop: (arg) => write(arg, "drop"),
 	onItemResize: (arg) => write(arg, "resize"),
-	onItemClick: ({ item }) => record(`click ${item.id}`),
+	onItemClick: ({ item }) => {
+		record(`click ${item.id}`);
+		selected = item.id;
+		calendar.setOptions({ selected });
+	},
 	onItemDoubleClick: ({ item }) => record(`dblclick ${item.id}`),
 	onItemContextMenu: ({ item }) => record(`contextmenu ${item.id}`),
 	onSelect: (arg) => {
@@ -147,7 +164,8 @@ const calendar = new Calendar<DemoData>(host, {
 	},
 	onExternalDrop: (arg) => {
 		const title = arg.source?.title ?? "Dropped";
-		record(`external ${title} ${arg.startStr} → ${arg.endStr}${arg.rowId ? ` row=${arg.rowId}` : ""}`);
+		const area = arg.hit?.kind === "timeline" ? ` area=${arg.hit.area}` : "";
+		record(`external ${title} ${arg.startStr} → ${arg.endStr}${arg.rowId ? ` row=${arg.rowId}` : ""}${area}`);
 		unscheduled = unscheduled.filter((u) => u.title !== title);
 		renderTray();
 		calendarItems = [
@@ -155,6 +173,9 @@ const calendar = new Calendar<DemoData>(host, {
 			{ id: `ext-${Date.now()}`, title, start: arg.startStr, end: arg.endStr, allDay: arg.allDay, kind: "task", color: arg.source?.color, data: { kind: "task" } },
 		];
 		syncItems();
+	},
+	onExternalDragEnd: ({ source, dropped }) => {
+		if (!dropped) record(`external ${source.title} not dropped`);
 	},
 	itemDidMount: ({ el, item }) => {
 		if (item.kind === "task") el.dataset.taskPath = `Tasks/${item.title}.md`;

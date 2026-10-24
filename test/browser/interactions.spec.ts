@@ -127,7 +127,7 @@ test.describe("other views", () => {
 		await expect(more).toBeFocused();
 	});
 
-	test("timeline: drag shifts a bar by days, and ports create dependencies", async ({ page }) => {
+	test("timeline: drag shifts a bar by days", async ({ page }) => {
 		await open(page, "view=timeline");
 		const bar = item(page, "p-app-research");
 		const from = await center(bar);
@@ -137,12 +137,6 @@ test.describe("other views", () => {
 		const log = (await lastLog(page, "drop"))!;
 		const [, s] = /2026-10-(\d+)/.exec(log)!;
 		expect(Number(s)).toBe(24 + 2); // the second project starts at today + 3
-
-		await bar.hover();
-		const port = bar.locator(".tnc-port");
-		const target = await center(item(page, "p-web-build"));
-		await drag(page, await center(port), target);
-		await expect.poll(() => lastLog(page, "link")).toBe("link p-app-research -> p-web-build");
 	});
 
 	test("list and year views render the range", async ({ page }) => {

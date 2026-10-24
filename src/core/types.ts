@@ -2,6 +2,15 @@ import type { Day } from "./date";
 
 export type DateInput = Date | string | number;
 
+/** Dependency relationship, predecessor edge then successor edge: "FS" = finish-to-start. */
+export type DependencyType = "FS" | "SS" | "FF" | "SF";
+
+export interface ItemDependency {
+	id: string;
+	/** Default "FS". */
+	type?: DependencyType;
+}
+
 /**
  * One thing on the calendar. `end` is exclusive, as in FullCalendar and iCal:
  * an all-day item on the 3rd has start "2026-10-03", end "2026-10-04".
@@ -28,8 +37,11 @@ export interface CalendarItem<D = unknown> {
 	/** "background" items shade their time range without taking layout space. */
 	display?: "auto" | "background" | "none";
 	completed?: boolean;
-	/** Ids of items that must finish before this one starts. */
-	dependsOn?: string[];
+	/**
+	 * Items this one depends on. A plain id is finish-to-start; `{ id, type }`
+	 * sets the relationship ("SS": this starts no earlier than `id` starts, and so on).
+	 */
+	dependsOn?: readonly (string | ItemDependency)[];
 	/** Time-grid lane. "actual" items (tracked time) sit in a narrow side lane. */
 	lane?: "plan" | "actual";
 	/** Items sharing a groupId move together when one is dragged. */

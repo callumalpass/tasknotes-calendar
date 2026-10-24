@@ -987,6 +987,9 @@
 	padding-right: 8px;
 	background: var(--tnc-surface);
 	border-right: 1px solid var(--tnc-line);
+	/* Cover the row's bottom border too, so lines and arrows never show through. */
+	margin-bottom: -1px;
+	border-bottom: 1px solid var(--tnc-line);
 	overflow: hidden;
 	white-space: nowrap;
 }
@@ -1057,25 +1060,117 @@
 .tnc-item--timeline .tnc-resize.is-h {
 	top: 5px;
 	bottom: 5px;
+	width: var(--tnc-grip, 8px);
 }
+.tnc-item--timeline .tnc-resize[tabindex]:focus-visible {
+	outline: 2px solid var(--tnc-accent);
+	outline-offset: 1px;
+	border-radius: 2px;
+}
+/* Short bars hide clipped titles; narrow ones drop their grips and get a wider hit area so they still move and tap. */
+.tnc-item--timeline.is-compact > .tnc-item-main {
+	padding: 0;
+}
+.tnc-item--timeline.is-compact .tnc-item-title,
+.tnc-item--timeline.is-compact .tnc-item-time {
+	display: none;
+}
+.tnc-item--timeline.is-narrow .tnc-resize {
+	display: none;
+}
+.tnc-item--timeline.is-narrow::after,
+.tnc-item--timeline.is-milestone::after {
+	content: "";
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	left: 50%;
+	width: 20px;
+	margin-left: -10px;
+}
+.tnc-item--timeline.is-selected > .tnc-item-main {
+	outline: 2px solid var(--tnc-accent);
+	outline-offset: 1px;
+}
+/* Link handles: a visible dot inside an invisible, larger hit area outside the bar. */
 .tnc-port {
+	--tnc-port-hit: 16px;
+	--tnc-port-dot: 10px;
 	position: absolute;
 	top: 50%;
-	right: -9px;
-	width: 10px;
-	height: 10px;
-	margin-top: -5px;
-	border-radius: 50%;
-	border: 2px solid var(--c);
-	background: var(--tnc-surface);
+	width: var(--tnc-port-hit);
+	height: var(--tnc-port-hit);
+	margin-top: calc(var(--tnc-port-hit) / -2);
 	cursor: crosshair;
 	opacity: 0;
 	z-index: 3;
+	touch-action: none;
+}
+.tnc-port::after {
+	content: "";
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	width: var(--tnc-port-dot);
+	height: var(--tnc-port-dot);
+	margin: calc(var(--tnc-port-dot) / -2) 0 0 calc(var(--tnc-port-dot) / -2);
+	border-radius: 50%;
+	border: 2px solid var(--c);
+	background: var(--tnc-surface);
+}
+.tnc-port-start {
+	left: calc(var(--tnc-port-hit) * -1);
+}
+.tnc-port-finish {
+	right: calc(var(--tnc-port-hit) * -1);
+}
+.tnc-item--timeline.is-milestone .tnc-port-finish {
+	right: auto;
+	left: 8px;
+}
+.tnc-port.is-target::after {
+	background: var(--c);
+	transform: scale(1.3);
+}
+.tnc-port.is-invalid::after {
+	border-color: var(--tnc-warn);
+	background: var(--tnc-warn);
+}
+.tnc-item--timeline.is-link-target > .tnc-item-main {
+	box-shadow: 0 0 0 2px var(--tnc-accent);
+}
+.tnc-item--timeline.is-link-invalid > .tnc-item-main {
+	box-shadow: 0 0 0 2px var(--tnc-warn);
 }
 .tnc-item--timeline:hover .tnc-port,
 .tnc-item--timeline.is-hover .tnc-port,
-.tnc-item--timeline:focus-visible .tnc-port {
+.tnc-item--timeline.is-selected .tnc-port,
+.tnc-item--timeline:focus-visible .tnc-port,
+.tnc-tl.is-linking .tnc-item--timeline .tnc-port {
 	opacity: 1;
+}
+@media (pointer: coarse) {
+	.tnc-port {
+		--tnc-port-hit: 44px;
+		--tnc-port-dot: 14px;
+	}
+	.tnc-item--timeline.is-milestone .tnc-port-finish {
+		left: 8px;
+	}
+	.tnc-item--timeline.is-narrow::after,
+	.tnc-item--timeline.is-milestone::after {
+		width: 32px;
+		margin-left: -16px;
+	}
+}
+/* Without hover, handles show only on the selected bar (and on every bar while linking). */
+@media (hover: none) {
+	.tnc-item--timeline:not(.is-selected) .tnc-port {
+		visibility: hidden;
+	}
+	.tnc-tl.is-linking .tnc-item--timeline .tnc-port {
+		visibility: visible;
+	}
 }
 .tnc-tl-deps {
 	position: absolute;
@@ -1098,6 +1193,24 @@
 	stroke: var(--tnc-accent);
 	stroke-dasharray: 4 3;
 }
+.tnc-tl-deps path.is-linking.is-invalid {
+	stroke: var(--tnc-warn);
+}
+.tnc-tl-today-label {
+	position: absolute;
+	top: 1px;
+	z-index: 1;
+	transform: translateX(-50%);
+	padding: 0 4px;
+	border-radius: 3px;
+	background: var(--tnc-now);
+	color: var(--tnc-accent-text, #fff);
+	font-size: 10px;
+	font-weight: 650;
+	line-height: 14px;
+	white-space: nowrap;
+	pointer-events: none;
+}
 .tnc-tl-today {
 	position: absolute;
 	top: 0;
@@ -1115,6 +1228,11 @@
 }
 .tnc-tl-sel .tnc-sel {
 	right: auto;
+}
+.tnc-tl-sel .tnc-sel.is-column {
+	border-left: 1.5px dashed var(--tnc-accent);
+	border-right: 1.5px dashed var(--tnc-accent);
+	border-radius: 0;
 }
 
 /* ---------------------------------------------------------------- popover */

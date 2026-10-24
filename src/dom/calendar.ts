@@ -29,6 +29,8 @@ import {
 	type ItemArg,
 	type ItemChangeArg,
 	LAYOUT_KEYS,
+	type LinkEdge,
+	type TimelineAnchor,
 	type ToolbarOptions,
 	type ViewInfo,
 	type ViewType,
@@ -66,6 +68,8 @@ interface Session<D> {
 	timer: number | null;
 	lastEvent: PointerEvent | null;
 	source?: ExternalDragSource<D>;
+	/** Last hit of an external drag. */
+	hit?: Hit | null;
 	/** Touch on a draggable item scrolls by hand: its `touch-action: none` stops native panning. */
 	pan?: { el: HTMLElement; left: number; top: number; active: boolean };
 }
@@ -88,6 +92,11 @@ function sameOption(a: unknown, b: unknown, depth = 0): boolean {
 	const kb = Object.keys(b);
 	if (ka.length !== kb.length) return false;
 	return ka.every((k) => sameOption((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k], depth + 1));
+}
+
+/** Timeline options other than `rows`, so row-only changes can skip a rebuild. */
+function timelineSansRows<D>(t: CalendarOptions<D>["timeline"]): unknown {
+	return t ? { ...t, rows: null } : t;
 }
 
 function sameProposal(a: Proposal | null, b: Proposal | null): boolean {
@@ -125,6 +134,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	private session: Session<D> | null = null;
 	private selection: Selection | null = null;
 	private suppressClick = false;
+	private selectedIds = new Set<string>();
 	private popover: { el: HTMLElement; pool: ItemPool<D>; anchor: HTMLElement; day: Day } | null = null;
 	private timer: number | null = null;
 	private resizeObs: ResizeObserver | null = null;
@@ -151,6 +161,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		this.store.setAll(items);
 		this.conflicts = dependencyConflicts(this.store);
 		this.anchor = this.toDay(this.opts.date) ?? this.todayDay();
+		this.selectedIds = this.selectedSet();
 
 		this.root = h(this.doc, "div", "tnc", { "data-tnc": "" });
 		this.toolbarEl = h(this.doc, "div", "tnc-toolbar", { role: "toolbar" });
@@ -195,8 +206,16 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		return this.store.get(id)?.item;
 	}
 
-	/** Updates options. Only what the change affects is rebuilt. */
-	setOptions(next: Partial<CalendarOptions<D>>): void {
+	/**
+	 * Updates options. Only what the change affects is rebuilt.
+	 *
+	 * In the timeline, a new `date`, range or scale keeps what is on screen
+	 * instead of jumping back to the anchor date: a scale change keeps the
+	 * instant at the middle of the visible track, other changes keep the left
+	 * edge. Pass `anchor` to pin a different instant, e.g. the one under the
+	 * pointer when zooming with the wheel.
+	 */
+	setOptions(next: Partial<CalendarOptions<D>>, how: { anchor?: TimelineAnchor } = {}): void {
 		const prev = this.opts;
 		this.opts = { ...prev, ...next };
 		const changed = (Object.keys(next) as (keyof CalendarOptions<D>)[]).filter(
@@ -204,6 +223,20 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		);
 		if (!changed.length) return;
 		const has = (k: keyof CalendarOptions<D>) => changed.includes(k);
+		if (has("selected")) this.applySelected();
+		const rest = changed.filter((k) => k !== "selected");
+		if (!rest.length) return;
+		// Timeline rows alone re-render in place, so row labels and scroll survive.
+		if (
+			rest.length === 1 &&
+			has("timeline") &&
+			this.current instanceof TimelineView &&
+			sameOption(timelineSansRows(this.opts.timeline), timelineSansRows(prev.timeline))
+		) {
+			this.current.render(null);
+			if (this.selection) this.current.showSelection(this.selection);
+			return;
+		}
 		if (has("timeZone") || has("defaultTimedMinutes") || has("defaultAllDayDays")) {
 			this.zone = getTimeZone(this.opts.timeZone);
 			this.store.reconfigure(this.zone, {
@@ -216,7 +249,30 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		if (has("eventOrder")) this.order = parseOrder(this.opts.eventOrder);
 		if (has("date")) this.anchor = this.toDay(this.opts.date) ?? this.anchor;
 		const needsRebuild = changed.some((k) => LAYOUT_KEYS.has(k)) || has("date");
-		if (needsRebuild) this.rebuild(has("view") || has("date"));
+		if (!needsRebuild) return;
+		const keep = !has("view") && this.opts.view === "timeline" ? this.timelineKeep(prev, how.anchor) : null;
+		if (keep) this.rebuild(false, keep);
+		else this.rebuild(has("view") || has("date"));
+	}
+
+	/** What a timeline rebuild should keep on screen. */
+	private timelineKeep(prev: CalendarOptions<D>, anchor: TimelineAnchor | undefined): { ms: number; vx: number; top: number } | null {
+		const view = this.current;
+		if (!(view instanceof TimelineView)) return null;
+		const top = view.getScroll().top;
+		if (anchor) {
+			const date = anchor.date !== undefined ? this.toMs(anchor.date) : null;
+			if (anchor.clientX !== undefined) {
+				const vx = anchor.clientX - view.viewportLeft();
+				return { ms: date ?? view.instantAt(vx), vx, top };
+			}
+			if (date !== null) return { ms: date, vx: view.viewportXOf(date), top };
+		}
+		const before = prev.timeline?.scale;
+		const after = this.opts.timeline?.scale;
+		const rescaled = !sameOption(before, after) || prev.timeline?.labelWidth !== this.opts.timeline?.labelWidth;
+		const vx = rescaled ? view.viewportCentre() : (this.opts.timeline?.labelWidth ?? 240);
+		return { ms: view.instantAt(vx), vx, top };
 	}
 
 	/** Re-renders everything, e.g. after render hooks start returning different content. */
@@ -292,6 +348,31 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		this.current?.scrollToTime?.(parseDurationMinutes(time, this.slot.scroll));
 	}
 
+	/**
+	 * Scrolls a date (or instant) into view. In the timeline `align` places it
+	 * at the start, middle or end of the visible track; other views move to
+	 * the date if it is outside the range, and time grids scroll to its time.
+	 */
+	scrollToDate(date: DateInput, opts: { align?: "start" | "center" | "end"; smooth?: boolean } = {}): void {
+		const p = parseDateInput(date, this.zone);
+		if (!p) return;
+		const day = p.kind === "day" ? p.day : dayOf(p.ms, this.zone);
+		const ms = p.kind === "day" ? toInstant(p.day, 0, this.zone) : p.ms;
+		const { startDay, endDay } = this.view.range;
+		if (day < startDay || day >= endDay) {
+			this.anchor = day;
+			this.rebuild(true);
+		}
+		const view = this.current;
+		if (view instanceof TimelineView) view.scrollToInstant(ms, opts.align ?? "center", opts.smooth ?? false);
+		else if (view instanceof TimeGridView && p.kind !== "day") view.scrollToTime(wallTime(ms, this.zone).minute);
+	}
+
+	/** What is under a client point: a time slot, a day, or a timeline row and date. Null outside the view. */
+	hitTest(clientX: number, clientY: number): Hit | null {
+		return this.current?.hit(clientX, clientY) ?? null;
+	}
+
 	/** Item elements currently rendered for an id. */
 	elementsFor(id: string): HTMLElement[] {
 		return this.current?.elementsFor(id) ?? [];
@@ -341,6 +422,11 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 
 	now(): number {
 		return Date.now();
+	}
+
+	suppressNextClick(): void {
+		this.suppressClick = true;
+		this.win.setTimeout(() => (this.suppressClick = false), 0);
 	}
 
 	dayArg(day: Day): DayArg {
@@ -406,6 +492,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		if (this.conflicts.has(n.id)) el.classList.add("is-conflict");
 		if (!meta.mirror && (this.isEditable(n, "start") || this.isEditable(n, "duration"))) el.classList.add("is-draggable");
 		if (this.draggingId === n.id) el.classList.add("is-dragging");
+		if (this.selectedIds.has(n.id) && !meta.mirror) el.classList.add("is-selected");
 		el.classList.add(...classList(it.className));
 		const arg = this.itemArg(el, meta);
 		el.classList.add(...classList(this.opts.itemClassNames?.(arg)));
@@ -442,6 +529,20 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		if (time) this.fillTime(time, meta.n, meta.variant, meta.day);
 		el.classList.toggle("is-dragging", this.draggingId === meta.n.id);
 		el.classList.toggle("is-conflict", this.conflicts.has(meta.n.id));
+		el.classList.toggle("is-selected", this.selectedIds.has(meta.n.id) && !meta.mirror);
+	}
+
+	private selectedSet(): Set<string> {
+		const s = this.opts.selected;
+		return new Set(s == null ? [] : typeof s === "string" ? [s] : s);
+	}
+
+	private applySelected(): void {
+		this.selectedIds = this.selectedSet();
+		for (const el of this.viewHost.querySelectorAll<HTMLElement>(".tnc-item")) {
+			const meta = this.meta.get(el);
+			if (meta) el.classList.toggle("is-selected", this.selectedIds.has(meta.n.id) && !meta.mirror);
+		}
 	}
 
 	destroyItemEl(el: HTMLElement): void {
@@ -522,6 +623,12 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		return p.kind === "day" ? p.day : dayOf(p.ms, this.zone);
 	}
 
+	private toMs(date: DateInput): number | null {
+		const p = parseDateInput(date, this.zone);
+		if (!p) return null;
+		return p.kind === "day" ? toInstant(p.day, 0, this.zone) : p.ms;
+	}
+
 	private step(dir: 1 | -1): Day {
 		const { view, dayCount, listDayCount } = this.opts;
 		switch (view) {
@@ -585,8 +692,8 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		return this.fmt.range(first, last);
 	}
 
-	private rebuild(navigated: boolean): void {
-		const scroll = navigated ? null : this.current?.getScroll();
+	private rebuild(navigated: boolean, keep?: { ms: number; vx: number; top: number }): void {
+		const scroll = navigated || keep ? null : this.current?.getScroll();
 		this.closeMore();
 		this.unselectSilently();
 		this.firstDay = this.opts.firstDay ?? localeFirstDay(this.opts.locale);
@@ -628,7 +735,10 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		this.current = this.createView();
 		this.viewHost.replaceChildren(this.current.el);
 		this.current.render(null);
-		if (scroll) this.current.setScroll(scroll);
+		if (keep && this.current instanceof TimelineView) {
+			this.current.setScroll({ top: keep.top, left: 0 });
+			this.current.placeInstant(keep.ms, keep.vx);
+		} else if (scroll) this.current.setScroll(scroll);
 		else if (this.current instanceof TimeGridView) this.current.scrollToTime(this.slot.scroll);
 		else if (this.current instanceof TimelineView) this.current.scrollToDay(this.anchor);
 
@@ -798,23 +908,30 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 
 	private addHandles(el: HTMLElement, meta: ElMeta<D>): void {
 		const { n, variant } = meta;
-		if (!this.isEditable(n, "duration")) {
-			if (variant === "timeline" && this.opts.timeline?.onLink) this.addPorts(el);
+		const ports = variant === "timeline" && !meta.mirror && n.id !== EXTERNAL_ID && !!this.opts.timeline?.onLink;
+		if (variant === "dot" || !this.isEditable(n, "duration")) {
+			if (ports) this.addPorts(el, n);
 			return;
 		}
 		const vertical = variant === "timed";
-		if (variant === "dot") return;
-		if (meta.isEnd && !(variant === "timeline" && n.item.kind === "milestone")) {
-			el.append(h(this.doc, "div", `tnc-resize tnc-resize-end ${vertical ? "is-v" : "is-h"}`, { "aria-hidden": "true" }));
-		}
-		if (meta.isStart && (this.opts.resizableFromStart || variant === "timeline") && n.item.kind !== "milestone") {
-			el.append(h(this.doc, "div", `tnc-resize tnc-resize-start ${vertical ? "is-v" : "is-h"}`, { "aria-hidden": "true" }));
-		}
-		if (variant === "timeline" && this.opts.timeline?.onLink) this.addPorts(el);
+		const milestone = variant === "timeline" && n.item.kind === "milestone";
+		const handleLabel = variant === "timeline" ? this.opts.timeline?.resizeHandleLabel : undefined;
+		const handle = (edge: "start" | "end") => {
+			const label = handleLabel?.({ item: n.item, edge: edge === "start" ? "start" : "finish" });
+			const attrs = label ? { role: "button", tabindex: "0", "aria-label": label } : { "aria-hidden": "true" };
+			el.append(h(this.doc, "div", `tnc-resize tnc-resize-${edge} ${vertical ? "is-v" : "is-h"}`, attrs));
+		};
+		if (meta.isStart && (this.opts.resizableFromStart || variant === "timeline") && !milestone) handle("start");
+		if (meta.isEnd && !milestone) handle("end");
+		if (ports) this.addPorts(el, n);
 	}
 
-	private addPorts(el: HTMLElement): void {
-		el.append(h(this.doc, "span", "tnc-port tnc-port-out", { "aria-hidden": "true", title: "Drag to link" }));
+	/** Start and finish link handles (a milestone has one). */
+	private addPorts(el: HTMLElement, n: NormalizedItem<D>): void {
+		const edges: LinkEdge[] = n.item.kind === "milestone" ? ["finish"] : ["start", "finish"];
+		for (const edge of edges) {
+			el.append(h(this.doc, "span", `tnc-port tnc-port-${edge}`, { "aria-hidden": "true", "data-edge": edge, title: "Drag to link" }));
+		}
 	}
 
 	/* ============================================================== popover */
@@ -847,6 +964,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	private bindEvents(): void {
 		const r = this.root;
 		r.addEventListener("pointerdown", this.onPointerDown);
+		r.addEventListener("click", this.onClickCapture, true);
 		r.addEventListener("click", this.onClick);
 		r.addEventListener("dblclick", this.onDblClick);
 		r.addEventListener("contextmenu", this.onContextMenu);
@@ -864,6 +982,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	private unbindEvents(): void {
 		const r = this.root;
 		r.removeEventListener("pointerdown", this.onPointerDown);
+		r.removeEventListener("click", this.onClickCapture, true);
 		r.removeEventListener("click", this.onClick);
 		r.removeEventListener("dblclick", this.onDblClick);
 		r.removeEventListener("contextmenu", this.onContextMenu);
@@ -920,7 +1039,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 			if (!this.opts.selectable || !this.current) return;
 			if (target.closest(".tnc-popover, .tnc-more")) return;
 			const hit = this.current.hit(ev.clientX, ev.clientY);
-			if (!hit) return;
+			if (!hit || (hit.kind === "timeline" && !hit.overTrack)) return;
 			mode = "select";
 		}
 		const touch = ev.pointerType === "touch";
@@ -1006,15 +1125,13 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 			// A tap or click without dragging.
 			this.endSession(null, true);
 			if (s.pan?.active) {
-				this.suppressClick = true;
-				this.win.setTimeout(() => (this.suppressClick = false), 0);
+				this.suppressNextClick();
 				return;
 			}
 			if (s.mode === "select" && s.grab) this.clickSlot(s.grab, ev, s.pointerType === "touch");
 			return;
 		}
-		this.suppressClick = true;
-		this.win.setTimeout(() => (this.suppressClick = false), 0);
+		this.suppressNextClick();
 		this.endSession(ev, false);
 	};
 
@@ -1058,13 +1175,17 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		this.applyChange(this.store.upsert([this.withProposal(origin, p)]));
 	}
 
-	private trackExternal(s: Session<D>, hit: Hit | null): void {
+	private trackExternal(s: Session<D>, raw: Hit | null): void {
 		const src = s.source!;
+		// Timeline drops land on rows, headings and the date header, not on labels or past the range.
+		const hit = raw?.kind === "timeline" && raw.area !== "track" && raw.area !== "header" ? null : raw;
+		s.hit = hit;
 		if (!hit) {
 			if (s.proposal) {
 				s.proposal = null;
 				this.applyChange(this.store.remove([EXTERNAL_ID]));
 			}
+			this.unselectSilently();
 			return;
 		}
 		const dur = src.durationMinutes ?? this.opts.defaultTimedMinutes;
@@ -1079,13 +1200,18 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 			const day = hit.day;
 			p = this.dayProposal(day, day + 1);
 		}
-		if (hit.kind === "timeline") p.rowId = hit.rowId;
+		if (hit.kind === "timeline" && hit.overTrack && hit.rowId !== null) p.rowId = hit.rowId;
 		const allowed =
 			this.opts.canDrop?.({ item: this.externalItem(src, p), start: new Date(p.startMs), end: new Date(p.endMs), allDay: p.allDay, rowId: p.rowId }) ?? true;
 		s.denied = !allowed;
 		this.root.classList.toggle("tnc-drop-denied", !allowed);
 		if (sameProposal(p, s.proposal)) return;
 		s.proposal = p;
+		// Off a row (heading, date header) the drop date shows as a column.
+		if (hit.kind === "timeline" && p.rowId === undefined) {
+			this.selection = { ...p };
+			this.current?.showSelection(this.selection);
+		} else this.unselectSilently();
 		this.dragRow = p.rowId !== undefined ? { id: EXTERNAL_ID, rowId: p.rowId } : null;
 		this.applyChange(this.store.upsert([this.externalItem(src, p)]));
 	}
@@ -1150,7 +1276,8 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 				const startMs = this.civilToMs(this.civil(o.startMs) + delta);
 				p = this.timedProposal(startMs, startMs + (o.endMs - o.startMs));
 			}
-			p.rowId = hit.rowId;
+			// Over a heading or the header the bar keeps its row and only moves in time.
+			p.rowId = (hit.overTrack ? hit.rowId : null) ?? this.dragRow?.rowId ?? this.opts.timeline?.rowOf(o.item) ?? undefined;
 			return p;
 		}
 		if (hit.kind === "allDay") {
@@ -1229,17 +1356,18 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 			const startMs = this.civilToMs(Math.min(ca, cb));
 			const endMs = this.civilToMs(Math.max(ca, cb) + snap);
 			const sel: Selection = { ...this.timedProposal(startMs, endMs) };
-			if (a.kind === "timeline") sel.rowId = a.rowId;
+			if (a.kind === "timeline" && a.overTrack && a.rowId !== null) sel.rowId = a.rowId;
 			return sel;
 		}
 		const da = a.day;
 		const db = b.day;
 		const sel: Selection = this.dayProposal(Math.min(da, db), Math.max(da, db) + 1);
-		if (a.kind === "timeline") sel.rowId = a.rowId;
+		if (a.kind === "timeline" && a.overTrack && a.rowId !== null) sel.rowId = a.rowId;
 		return sel;
 	}
 
 	private clickSlot(hit: Hit, ev: PointerEvent, touch: boolean): void {
+		if (hit.kind === "timeline" && !hit.overTrack) return;
 		const day = hit.day;
 		this.opts.onDateClick?.({ ...this.dayArg(day), jsEvent: ev });
 		if (touch || !this.opts.selectable) return;
@@ -1304,7 +1432,16 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		if (s.mode === "external") {
 			const p = s.proposal;
 			if (p) this.applyChange(this.store.remove([EXTERNAL_ID]));
-			if (cancel || !p || s.denied || !ev) return;
+			this.unselectSilently();
+			const dropped = !cancel && !!p && !s.denied && !!ev;
+			const hit = s.hit ?? null;
+			const ended = () => {
+				if (s.source) this.opts.onExternalDragEnd?.({ source: s.source, dropped, hit, jsEvent: ev });
+			};
+			if (!dropped || !p || !ev) {
+				ended();
+				return;
+			}
 			this.flush();
 			this.opts.onExternalDrop?.({
 				start: new Date(p.startMs),
@@ -1316,8 +1453,10 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 				view: this.view,
 				rowId: p.rowId,
 				source: s.source ?? null,
+				hit,
 				dataTransfer: null,
 			});
+			ended();
 			return;
 		}
 		const origin = s.origin!;
@@ -1378,12 +1517,15 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 
 	/* --------------------------------------------------------- click / keys */
 
+	/** Runs in the capture phase so the click ending a drag never reaches content inside the calendar, React portals included. */
+	private readonly onClickCapture = (ev: MouseEvent) => {
+		if (!this.suppressClick) return;
+		this.suppressClick = false;
+		ev.stopPropagation();
+		ev.preventDefault();
+	};
+
 	private readonly onClick = (ev: MouseEvent) => {
-		if (this.suppressClick) {
-			this.suppressClick = false;
-			ev.stopPropagation();
-			return;
-		}
 		const el = this.itemElFrom(ev.target);
 		if (!el || (ev.target as Element).closest(".tnc-resize, .tnc-port")) return;
 		const meta = this.meta.get(el)!;
@@ -1450,7 +1592,14 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 			return;
 		}
 		const el = this.itemElFrom(ev.target);
-		if (!el || ev.target !== el) return;
+		if (!el) return;
+		const grip = (ev.target as Element).closest?.<HTMLElement>(".tnc-resize[tabindex]");
+		if (grip && el.contains(grip) && (ev.key === "ArrowLeft" || ev.key === "ArrowRight") && !ev.ctrlKey && !ev.metaKey) {
+			ev.preventDefault();
+			this.nudge(this.meta.get(el)!.n.id, ev, grip.classList.contains("tnc-resize-start") ? "start" : "end");
+			return;
+		}
+		if (ev.target !== el) return;
 		const meta = this.meta.get(el)!;
 		if (ev.key === "Enter" || ev.key === " ") {
 			ev.preventDefault();
@@ -1468,11 +1617,12 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		}
 	};
 
-	/** Alt+Arrow moves an item; Alt+Shift+Arrow changes its end. */
-	private nudge(id: string, ev: KeyboardEvent): void {
+	/** Alt+Arrow moves an item; Alt+Shift+Arrow changes its end; arrows on a focused grip move that edge. */
+	private nudge(id: string, ev: KeyboardEvent, edge: "start" | "end" | null = null): void {
 		const o = this.store.get(id);
 		if (!o) return;
-		const resize = ev.shiftKey;
+		const resize = edge !== null || ev.shiftKey;
+		const fromStart = edge === "start";
 		if (!this.isEditable(o, resize ? "duration" : "start")) return;
 		const view = this.opts.view;
 		const timeStep = view === "timeline" ? this.timelineSnap() : this.slot.snap;
@@ -1496,7 +1646,11 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		if (o.allDay) {
 			const dd = Math.round(dMin / MINUTES_PER_DAY);
 			if (!dd) return;
-			p = resize ? this.dayProposal(o.startDay, Math.max(o.startDay + 1, o.endDay + dd)) : this.dayProposal(o.startDay + dd, o.endDay + dd);
+			if (fromStart) p = this.dayProposal(Math.min(o.endDay - 1, o.startDay + dd), o.endDay);
+			else if (resize) p = this.dayProposal(o.startDay, Math.max(o.startDay + 1, o.endDay + dd));
+			else p = this.dayProposal(o.startDay + dd, o.endDay + dd);
+		} else if (fromStart) {
+			p = this.timedProposal(Math.min(o.endMs - timeStep * 60_000, this.civilToMs(this.civil(o.startMs) + dMin)), o.endMs);
 		} else if (resize) {
 			p = this.timedProposal(o.startMs, Math.max(o.startMs + timeStep * 60_000, this.civilToMs(this.civil(o.endMs) + dMin)));
 		} else {
@@ -1509,9 +1663,12 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 			this.applyChange(this.store.upsert([o.item]));
 			this.flush();
 		};
+		if (p.startMs === o.startMs && p.endMs === o.endMs) return;
 		this.applyChange(this.store.upsert([this.withProposal(o, p)]));
 		this.flush();
-		this.elementsFor(id)[0]?.focus();
+		const next = this.elementsFor(id)[0];
+		const grip = edge ? next?.querySelector<HTMLElement>(`.tnc-resize-${edge}[tabindex]`) : null;
+		(grip ?? next)?.focus();
 		this.commit(resize ? "resize" : "drop", o, p, ev, revert);
 	}
 
@@ -1523,7 +1680,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		ev.preventDefault();
 		dt.dropEffect = "copy";
 		const hit = this.current.hit(ev.clientX, ev.clientY);
-		if (!hit) return;
+		if (!hit || (hit.kind === "timeline" && hit.area !== "track" && hit.area !== "header")) return;
 		const sel = this.selectionFor(hit, hit);
 		if (!sel) return;
 		this.selection = sel;
@@ -1541,7 +1698,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		ev.preventDefault();
 		const hit = this.current.hit(ev.clientX, ev.clientY);
 		this.unselectSilently();
-		if (!hit) return;
+		if (!hit || (hit.kind === "timeline" && hit.area !== "track" && hit.area !== "header")) return;
 		const sel = this.selectionFor(hit, hit);
 		if (!sel) return;
 		this.opts.onExternalDrop?.({
@@ -1554,6 +1711,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 			view: this.view,
 			rowId: sel.rowId,
 			source: null,
+			hit,
 			dataTransfer: dt,
 		});
 	};

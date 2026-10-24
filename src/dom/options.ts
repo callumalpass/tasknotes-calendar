@@ -1,6 +1,6 @@
 import type { Day } from "../core/date";
 import type { ItemOrder } from "../core/layout";
-import type { CalendarItem, DateInput, DateRange } from "../core/types";
+import type { CalendarItem, DateInput, DateRange, DependencyType } from "../core/types";
 
 export type ViewType = "week" | "day" | "days" | "month" | "list" | "year" | "timeline";
 
@@ -17,7 +17,22 @@ export type Hit =
 	| { kind: "time"; day: Day; minute: number }
 	| { kind: "allDay"; day: Day }
 	| { kind: "day"; day: Day }
-	| { kind: "timeline"; rowId: string; day: Day; minute: number };
+	| {
+			kind: "timeline";
+			/** Row under the pointer (group rows included); null over the header, or below the last row. */
+			rowId: string | null;
+			day: Day;
+			minute: number;
+			area: TimelineArea;
+			/** Over a non-group row's track: where an item can be placed in a row. */
+			overTrack: boolean;
+	  };
+
+/**
+ * Part of the timeline under the pointer. "outside" is inside the chart but
+ * past the rows or the date range; points outside the chart hit nothing.
+ */
+export type TimelineArea = "track" | "header" | "label" | "outside";
 
 export interface ItemArg<D> {
 	item: CalendarItem<D>;
@@ -79,6 +94,8 @@ export interface ExternalDragSource<D = unknown> {
 
 export interface ExternalDropArg<D> extends SelectArg {
 	source: ExternalDragSource<D> | null;
+	/** Where the drop landed; in the timeline this says whether it was over a row, a heading or the date header. */
+	hit: Hit | null;
 	/** Set for native (HTML5) drops. */
 	dataTransfer: DataTransfer | null;
 }
@@ -120,9 +137,53 @@ export interface TimelineRow {
 export interface TimelineScale {
 	/** Width of one `unit` in px. */
 	unitWidth: number;
+	/** Width of one day in px. Overrides `unitWidth`; the unit then only picks the header ticks. */
+	dayWidth?: number;
 	unit: "hour" | "day" | "week" | "month" | "quarter";
 	/** Drag snap in minutes. */
 	snapMinutes: number;
+}
+
+/** Days in one timeline scale unit, used to turn `unitWidth` into a day width. */
+export const TIMELINE_UNIT_DAYS: Readonly<Record<TimelineScale["unit"], number>> = {
+	hour: 1 / 24,
+	day: 1,
+	week: 7,
+	month: 30.44,
+	quarter: 91.31,
+};
+
+export type LinkEdge = "start" | "finish";
+
+export interface LinkArg<D> {
+	from: CalendarItem<D>;
+	to: CalendarItem<D>;
+	fromEdge: LinkEdge;
+	toEdge: LinkEdge;
+	/** `fromEdge` and `toEdge` as a relationship type. */
+	type: DependencyType;
+}
+
+/** A link drag in progress. `to` is the bar or link handle under the pointer. */
+export interface LinkDragArg<D> {
+	phase: "start" | "over" | "end";
+	from: CalendarItem<D>;
+	fromEdge: LinkEdge;
+	to: CalendarItem<D> | null;
+	toEdge: LinkEdge | null;
+	type: DependencyType | null;
+	/** False when `canLink` refused the target. */
+	valid: boolean;
+	/** Reason returned by `canLink`. */
+	reason: string | null;
+	/** On "end": whether `onLink` fired. */
+	linked: boolean;
+}
+
+export interface TimelineRowArg {
+	row: TimelineRow;
+	/** The row's label cell. Content placed here is yours until `rowLabelWillUnmount`. */
+	el: HTMLElement;
 }
 
 export interface TimelineOptions<D> {
@@ -138,11 +199,41 @@ export interface TimelineOptions<D> {
 	rowHeight?: number;
 	/** Draw `dependsOn` arrows. */
 	dependencies?: boolean;
+	/** Fills a row label. Prefer `rowLabelDidMount`, which pairs with `rowLabelWillUnmount`. */
 	rowContent?: (row: TimelineRow, el: HTMLElement) => void;
-	/** Fires when the user drags from one bar's link port to another. */
-	onLink?: (arg: { from: CalendarItem<D>; to: CalendarItem<D> }) => void;
+	/**
+	 * A row's label cell was created. Mount your content (a React portal, say)
+	 * into `el`; the calendar leaves it alone and suppresses the click that ends
+	 * a drag before it reaches listeners inside.
+	 */
+	rowLabelDidMount?: (arg: TimelineRowArg) => void;
+	/** A row's label cell is about to be removed. */
+	rowLabelWillUnmount?: (arg: TimelineRowArg) => void;
+	/**
+	 * Fires when the user drags from a bar's start or finish handle to another
+	 * bar. Dropping on a handle picks that edge; dropping on the bar picks the
+	 * nearer edge (a milestone's body counts as its start).
+	 */
+	onLink?: (arg: LinkArg<D>) => void;
+	/** Return false or a reason to refuse a link target while dragging. */
+	canLink?: (arg: LinkArg<D>) => boolean | string;
+	/** Reports a link drag as it starts, changes target and ends. */
+	onLinkDrag?: (arg: LinkDragArg<D>) => void;
+	/** Label shown on the today line, e.g. "Today". */
+	todayLabel?: string;
+	/**
+	 * Makes bar resize handles focusable buttons with this label. Arrow keys on a
+	 * focused handle move that edge by the snap.
+	 */
+	resizeHandleLabel?: (arg: { item: CalendarItem<D>; edge: LinkEdge }) => string;
 	onRowClick?: (row: TimelineRow, jsEvent: MouseEvent) => void;
 }
+
+/**
+ * Pins a timeline instant to a screen position across `setOptions`: the
+ * instant under `clientX`, or `date` at `clientX` (or where `date` is now).
+ */
+export type TimelineAnchor = { clientX: number; date?: DateInput } | { date: DateInput; clientX?: number };
 
 export interface ToolbarButton {
 	id: string;
@@ -235,6 +326,8 @@ export interface CalendarOptions<D = unknown> {
 	timeline: TimelineOptions<D> | null;
 	/** Accept native HTML5 drops (e.g. files). */
 	acceptNativeDrop: ((dt: DataTransfer) => boolean) | null;
+	/** Ids of selected items: they get `is-selected`, and in the timeline show their link handles on touch. */
+	selected: string | readonly string[] | null;
 
 	/* callbacks */
 	onRangeChange?: (view: ViewInfo) => void;
@@ -253,6 +346,8 @@ export interface CalendarOptions<D = unknown> {
 	/** Date links: day headers and numbers (`target: "day"`), year-view month titles (`"month"`). Default switches to that view. */
 	onNavLink?: (arg: DayArg & { target: "day" | "month"; jsEvent: MouseEvent | KeyboardEvent }) => void;
 	onExternalDrop?: (arg: ExternalDropArg<D>) => void;
+	/** Fires when a `beginExternalDrag` drag ends, dropped or not. */
+	onExternalDragEnd?: (arg: { source: ExternalDragSource<D>; dropped: boolean; hit: Hit | null; jsEvent: PointerEvent | null }) => void;
 	/** Return false to skip the built-in popover. */
 	onMoreClick?: (arg: MoreArg<D>) => boolean | void;
 
@@ -326,6 +421,7 @@ export function defaultOptions<D>(): CalendarOptions<D> {
 		text: {},
 		timeline: null,
 		acceptNativeDrop: null,
+		selected: null,
 	};
 }
 
