@@ -7,6 +7,8 @@
 #   scripts/desk-live.sh down       # stop the servers (the desktop is kept)
 #
 # Paths default to the calendar worktrees; override with the variables below.
+# A missing desktop is recreated from the `tasknotes-calendar` checkpoint
+# (`desk checkpoint local/tnc-calendar tasknotes-calendar` refreshes it).
 set -euo pipefail
 
 LIB=${TNC_LIB:-$HOME/projects/tasknotes-calendar}
@@ -35,7 +37,7 @@ serve() { # name dir port command...
 		echo "$name already on :$port"
 		return
 	fi
-	(cd "$dir" && setsid "$@" </dev/null >"$STATE/$name.log" 2>&1 &)
+	(cd "$dir" && exec setsid "$@") </dev/null >"$STATE/$name.log" 2>&1 &
 	for _ in $(seq 60); do
 		curl -fsS -o /dev/null "http://127.0.0.1:$port/" && { echo "$name on :$port"; return; }
 		sleep 1
@@ -60,9 +62,11 @@ cp -r "$PLUGIN/tasknotes-e2e-vault" "$STATE/vault"
 rm -rf "$STATE/vault/.obsidian/plugins" "$STATE/vault/.obsidian/workspace.json"
 
 if desk ls 2>/dev/null | grep -q "^$DESKTOP\b"; then
-	desk start "$DESKTOP" 2>/dev/null || true
+	desk start "$DESKTOP" </dev/null >>"$STATE/desk.log" 2>&1 || true
 else
-	desk up "$DESKTOP" --keep --res 1440x900 --vault-fixture "$STATE/vault"
+	from=()
+	desk checkpoints </dev/null 2>/dev/null | grep -q '^tasknotes-calendar\b' && from=(--from tasknotes-calendar)
+	desk up "$DESKTOP" --keep --res 1440x900 "${from[@]}" --vault-fixture "$STATE/vault" </dev/null >>"$STATE/desk.log" 2>&1
 fi
 # desk leaves watcher and port-forward daemons running; keep them off our stdout.
 desk obsidian "$DESKTOP" --plugin "$PLUGIN" --watch </dev/null >"$STATE/desk.log" 2>&1
