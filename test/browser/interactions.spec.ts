@@ -378,3 +378,27 @@ test("@touch long-press drags, a quick swipe scrolls", async ({ page }) => {
 	await touch("touchEnd", b2.x + 20, b2.y + 106);
 	await expect.poll(() => lastLog(page, "drop")).toMatch(/^drop scheduled-8 2026-10-22T1[45]:00/);
 });
+
+test("a calendar moved into another window keeps dragging (popout windows)", async ({ page }) => {
+	await open(page, "view=timeGridWeek");
+	// Hosts like Obsidian move the live DOM into a popout; a same-origin iframe is another window.
+	await page.evaluate(async () => {
+		const frame = document.createElement("iframe");
+		frame.style.cssText = "position:fixed;inset:0;width:100vw;height:100vh;border:0;background:white";
+		document.body.append(frame);
+		await new Promise((r) => setTimeout(r, 0));
+		const doc = frame.contentDocument!;
+		for (const sheet of document.querySelectorAll("link[rel=stylesheet], style")) doc.head.append(sheet.cloneNode(true));
+		doc.body.style.cssText = "margin:0;height:100vh;display:flex";
+		await new Promise((r) => setTimeout(r, 50));
+		doc.body.append(window.tnc.calendar.host);
+	});
+	const frame = page.frameLocator("iframe");
+	const el = frame.locator('.tnc-item[data-id="scheduled-1"]');
+	await expect(el).toBeVisible();
+	const box = (await el.boundingBox())!;
+	const target = (await frame.locator('.tnc-col[data-date="2026-10-20"]').boundingBox())!;
+	const from = { x: box.x + box.width / 2, y: box.y + 8 };
+	await drag(page, from, { x: target.x + target.width / 2, y: from.y });
+	await expect.poll(() => lastLog(page, "drop")).toMatch(/^drop scheduled-1 2026-10-20T/);
+});
