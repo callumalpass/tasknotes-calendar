@@ -1,6 +1,6 @@
 {
 	"name": "@tasknotes/calendar",
-	"version": "0.1.0-dev.0",
+	"version": "0.1.0",
 	"description": "Task-native calendar engine for TaskNotes: incremental layout, time grid, month, list, year and timeline views.",
 	"license": "MIT",
 	"type": "module",
@@ -8,30 +8,64 @@
 		"type": "git",
 		"url": "git+https://github.com/callumalpass/tasknotes-calendar.git"
 	},
+	"keywords": [
+		"calendar",
+		"tasknotes",
+		"timeline",
+		"scheduling",
+		"typescript",
+		"obsidian"
+	],
+	"bugs": {
+		"url": "https://github.com/callumalpass/tasknotes-calendar/issues"
+	},
+	"homepage": "https://github.com/callumalpass/tasknotes-calendar#readme",
+	"engines": {
+		"node": ">=22"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
 	"main": "./dist/cjs/index.cjs",
 	"module": "./dist/esm/index.js",
 	"types": "./dist/types/index.d.ts",
 	"exports": {
 		".": {
-			"types": "./dist/types/index.d.ts",
-			"import": "./dist/esm/index.js",
-			"require": "./dist/cjs/index.cjs"
+			"import": {
+				"types": "./dist/types/index.d.ts",
+				"default": "./dist/esm/index.js"
+			},
+			"require": {
+				"types": "./dist/types/index.d.cts",
+				"default": "./dist/cjs/index.cjs"
+			}
 		},
 		"./core": {
-			"types": "./dist/types/core/index.d.ts",
-			"import": "./dist/esm/core.js",
-			"require": "./dist/cjs/core.cjs"
+			"import": {
+				"types": "./dist/types/core/index.d.ts",
+				"default": "./dist/esm/core.js"
+			},
+			"require": {
+				"types": "./dist/types/core/index.d.cts",
+				"default": "./dist/cjs/core.cjs"
+			}
 		},
 		"./react": {
-			"types": "./dist/types/react/index.d.ts",
-			"import": "./dist/esm/react.js",
-			"require": "./dist/cjs/react.cjs"
+			"import": {
+				"types": "./dist/types/react/index.d.ts",
+				"default": "./dist/esm/react.js"
+			},
+			"require": {
+				"types": "./dist/types/react/index.d.cts",
+				"default": "./dist/cjs/react.cjs"
+			}
 		},
 		"./calendar.css": "./dist/calendar.css"
 	},
 	"files": [
 		"dist",
 		"README.md",
+		"CHANGELOG.md",
 		"LICENSE"
 	],
 	"sideEffects": [
@@ -47,17 +81,19 @@
 	},
 	"scripts": {
 		"clean": "node -e \"require('fs').rmSync('dist', { recursive: true, force: true })\"",
-		"build": "npm run clean && node scripts/build.mjs && tsc -p tsconfig.types.json",
+		"build": "npm run clean && node scripts/build.mjs && tsc -p tsconfig.types.json && node scripts/declarations.mjs",
 		"typecheck": "tsc -p tsconfig.json --noEmit",
 		"lint": "eslint src test",
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"test:browser": "playwright test",
+		"test:package": "node scripts/smoke-package.mjs",
 		"playground": "node scripts/playground.mjs",
 		"prepack": "npm run build"
 	},
 	"devDependencies": {
-		"@playwright/test": "^1.64.1",
+		"@axe-core/playwright": "4.14.0",
+		"@playwright/test": "1.64.1",
 		"@types/react": "^19.3.0",
 		"@types/react-dom": "^19.3.0",
 		"esbuild": "^0.28.2",
