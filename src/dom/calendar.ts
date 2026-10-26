@@ -3,6 +3,7 @@ import {
 	type Day,
 	formatDay,
 	MINUTES_PER_DAY,
+	parseDay,
 	parseDurationMinutes,
 	startOfMonth,
 	startOfWeek,
@@ -1389,7 +1390,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		return sel;
 	}
 
-	private clickSlot(hit: Hit, ev: PointerEvent, touch: boolean): void {
+	private clickSlot(hit: Hit, ev: PointerEvent | KeyboardEvent, touch: boolean): void {
 		if (hit.kind === "timeline" && !hit.overTrack) return;
 		const day = hit.day;
 		if (this.opts.onDateClick) {
@@ -1627,6 +1628,15 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 			ev.preventDefault();
 			ev.stopPropagation();
 			this.closeMore(true);
+			return;
+		}
+		const target = ev.target as HTMLElement;
+		if ((ev.key === "Enter" || ev.key === " ") && target.matches(".tnc-ym-day, .tnc-dg-day[tabindex]")) {
+			const day = parseDay(target.dataset.date ?? "");
+			if (day !== null) {
+				ev.preventDefault();
+				this.clickSlot({ kind: "day", day }, ev, true);
+			}
 			return;
 		}
 		const el = this.itemElFrom(ev.target);

@@ -105,7 +105,7 @@ export class TimelineView<D> implements View {
 		this.el.style.setProperty("--tnc-tl-row-h", `${this.rowHeight}px`);
 		this.el.style.setProperty("--tnc-tl-day-w", `${this.dayWidth}px`);
 		this.scroller = h(doc, "div", "tnc-tl-scroll");
-		this.canvas = h(doc, "div", "tnc-tl-canvas");
+		this.canvas = h(doc, "div", "tnc-tl-canvas", { role: "table", "aria-label": ctx.view.title });
 		this.canvas.style.width = `${this.labelWidth + this.trackWidth()}px`;
 		this.head = h(doc, "div", "tnc-tl-head");
 		this.ticks = h(doc, "div", "tnc-tl-ticks");
@@ -267,7 +267,7 @@ export class TimelineView<D> implements View {
 		else if (tl.rowContent) tl.rowContent(row, label);
 		else label.append(h(doc, "span", "tnc-tl-label-text", null, row.title));
 		if (tl.onRowClick) label.addEventListener("click", (ev) => this.tl.onRowClick?.(row, ev));
-		const track = h(doc, "div", "tnc-tl-track");
+		const track = h(doc, "div", "tnc-tl-track", { role: "cell" });
 		el.append(label, track);
 		return { row, el, label, track, pool: row.group ? null : new ItemPool(ctx, track), top: 0, height: this.rowHeight };
 	}

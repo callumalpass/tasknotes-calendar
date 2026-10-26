@@ -135,7 +135,8 @@
 .tnc-navlink:focus-visible,
 .tnc-item:focus-visible,
 .tnc-more:focus-visible,
-.tnc-ym-day:focus-visible {
+.tnc-ym-day:focus-visible,
+.tnc-dg-day[tabindex]:focus-visible {
 	outline: 2px solid var(--tnc-accent);
 	outline-offset: 1px;
 }
@@ -745,7 +746,11 @@
 .tnc-dg-week:has(.tnc-weeknum) .tnc-dg-layer {
 	left: var(--tnc-weeknum-w);
 }
-.tnc-dg-layer > .tnc-item {
+.tnc-dg-dates,
+.tnc-dg-content {
+	display: contents;
+}
+.tnc-dg-layer .tnc-item {
 	pointer-events: auto;
 }
 .tnc-dg-layer .tnc-sel {

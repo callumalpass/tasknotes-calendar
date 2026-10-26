@@ -46,16 +46,16 @@ export class TimeGridView<D> implements View {
 	constructor(private readonly ctx: ViewContext<D>) {
 		const { doc, opts } = ctx;
 		const showGrid = opts.timeGrid;
-		this.el = h(doc, "div", "tnc-tg");
+		this.el = h(doc, "div", "tnc-tg", { role: "table", "aria-label": ctx.view.title });
 		this.el.classList.toggle("tnc-tg--no-grid", !showGrid);
 		this.scroller = h(doc, "div", "tnc-tg-scroll");
 		this.top = h(doc, "div", "tnc-tg-top");
 		this.headRow = h(doc, "div", "tnc-tg-head tnc-tg-cols", { role: "row" });
 		this.top.append(this.headRow);
 		if (opts.allDaySlot || !showGrid) {
-			this.allDayRow = h(doc, "div", "tnc-tg-allday tnc-tg-cols");
-			const label = h(doc, "div", "tnc-gutter-label", null, showGrid ? ctx.text.allDay : "");
-			this.allDayLayer = h(doc, "div", "tnc-allday-layer");
+			this.allDayRow = h(doc, "div", "tnc-tg-allday tnc-tg-cols", { role: "row" });
+			const label = h(doc, "div", "tnc-gutter-label", { role: "rowheader" }, showGrid ? ctx.text.allDay : "");
+			this.allDayLayer = h(doc, "div", "tnc-allday-layer", { role: "cell", "aria-colspan": String(ctx.days.length) });
 			this.allDaySel = h(doc, "div", "tnc-sel-layer");
 			this.allDayMore = h(doc, "div", "tnc-more-layer");
 			this.allDayLayer.append(this.allDaySel, this.allDayMore);
@@ -68,7 +68,7 @@ export class TimeGridView<D> implements View {
 		}
 		this.scroller.append(this.top);
 		if (showGrid) {
-			this.body = h(doc, "div", "tnc-tg-body tnc-tg-cols");
+			this.body = h(doc, "div", "tnc-tg-body tnc-tg-cols", { role: "row" });
 			this.gutter = h(doc, "div", "tnc-gutter", { "aria-hidden": "true" });
 			this.body.append(this.gutter);
 			this.nowGutter = h(doc, "div", "tnc-now-label");
@@ -101,7 +101,7 @@ export class TimeGridView<D> implements View {
 		this.el.style.setProperty("--tnc-cols", tpl);
 
 		// Header
-		const gutterHead = h(doc, "div", "tnc-gutter-head");
+		const gutterHead = h(doc, "div", "tnc-gutter-head", { role: "columnheader" });
 		if (opts.weekNumbers && days[0] !== undefined) gutterHead.textContent = ctx.text.weekNumber(isoWeekNumber(days[0]));
 		this.headRow.replaceChildren(gutterHead);
 		const capacity = opts.capacityMinutes;
@@ -133,7 +133,7 @@ export class TimeGridView<D> implements View {
 			this.headRow.append(head);
 			opts.dayHeaderDidMount?.({ ...arg, el: head });
 
-			const col = h(doc, "div", ["tnc-col", ...ctx.dayClasses(day)].join(" "), { "data-date": arg.dateStr });
+			const col = h(doc, "div", ["tnc-col", ...ctx.dayClasses(day)].join(" "), { role: "cell", "aria-label": ctx.fmt.longDate(day), "data-date": arg.dateStr });
 			const bgLayer = h(doc, "div", "tnc-col-bg");
 			const planLayer = h(doc, "div", "tnc-col-plan");
 			const actualLane = h(doc, "div", "tnc-col-actual");

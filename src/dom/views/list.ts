@@ -49,7 +49,7 @@ export class ListView<D> implements View {
 				const label = custom ?? ctx.fmt.longDate(day);
 				heading.append(ctx.opts.navLinks ? ctx.navLink(day, label, "tnc-list-day-link") : label);
 				const rows = h(doc, "div", "tnc-list-rows", { role: "group" });
-				section = h(doc, "section", "tnc-list-section", { "data-date": arg.dateStr }, heading, rows);
+				section = h(doc, "div", "tnc-list-section", { role: "listitem", "aria-label": ctx.fmt.longDate(day), "data-date": arg.dateStr }, heading, rows);
 				ctx.opts.dayHeaderDidMount?.({ ...arg, el: heading });
 				pool = new ItemPool(ctx, rows);
 				this.sections.set(day, section);
@@ -89,7 +89,7 @@ export class ListView<D> implements View {
 		let empty = this.body.querySelector<HTMLElement>(":scope > .tnc-list-empty");
 		if (!keep.size) {
 			if (!empty) {
-				empty = h(doc, "div", "tnc-list-empty", null, ctx.text.noItems);
+				empty = h(doc, "div", "tnc-list-empty", { role: "listitem" }, ctx.text.noItems);
 				this.body.append(empty);
 			}
 		} else empty?.remove();

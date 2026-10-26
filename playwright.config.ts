@@ -5,12 +5,17 @@ const port = Number(process.env.PLAYGROUND_TEST_PORT ?? 4188);
 export default defineConfig({
 	testDir: "test/browser",
 	fullyParallel: true,
+	workers: process.env.CI ? 2 : undefined,
+	forbidOnly: !!process.env.CI,
+	snapshotPathTemplate: "{testDir}/__screenshots__/{testFilePath}/{arg}{ext}",
 	reporter: process.env.CI ? "line" : "list",
 	use: {
 		baseURL: `http://127.0.0.1:${port}`,
 		timezoneId: "Europe/London",
 		locale: "en-GB",
 		trace: "retain-on-failure",
+		colorScheme: "light",
+		reducedMotion: "reduce",
 	},
 	webServer: {
 		command: `node scripts/playground.mjs --port ${port}`,

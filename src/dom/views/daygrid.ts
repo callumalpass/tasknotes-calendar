@@ -72,13 +72,15 @@ export class DayGridView<D> implements View {
 		const anchorMonth = ymdOfDay(ctx.view.anchor).month;
 		for (let i = 0; i < days.length; i += perWeek) {
 			const wdays = days.slice(i, i + perWeek);
-			const row = h(doc, "div", "tnc-dg-week", { role: "row" });
-			if (opts.weekNumbers) row.append(h(doc, "div", "tnc-weeknum", null, ctx.text.weekNumber(isoWeekNumber(wdays[0]!))));
+			const row = h(doc, "div", "tnc-dg-week", { role: "rowgroup" });
+			const dates = h(doc, "div", "tnc-dg-dates", { role: "row" });
+			if (opts.weekNumbers) dates.append(h(doc, "div", "tnc-weeknum", { role: "rowheader" }, ctx.text.weekNumber(isoWeekNumber(wdays[0]!))));
 			const cells = wdays.map((d) => {
 				const arg = ctx.dayArg(d);
 				const cls = ["tnc-dg-day", ...ctx.dayClasses(d)];
 				if (ymdOfDay(d).month !== anchorMonth) cls.push("is-other-month");
-				const cell = h(doc, "div", cls.join(" "), { role: "gridcell", "data-date": arg.dateStr });
+				const cell = h(doc, "div", cls.join(" "), { role: "gridcell", "aria-label": ctx.fmt.longDate(d), "data-date": arg.dateStr });
+				if (this.dotsMode) cell.tabIndex = 0;
 				const num = ctx.fmt.dayNumber(d);
 				const label = ymdOfDay(d).day === 1 ? `${ctx.fmt.monthShort(d)} ${num}` : num;
 				cell.append(
@@ -90,14 +92,17 @@ export class DayGridView<D> implements View {
 						opts.navLinks ? ctx.navLink(d, label, "tnc-dg-num") : h(doc, "span", "tnc-dg-num", null, label),
 					),
 				);
-				row.append(cell);
+				dates.append(cell);
 				return cell;
 			});
-			const layer = h(doc, "div", "tnc-dg-layer");
+			// Spanning bars occupy one full-width cell below the row of dates.
+			const layer = h(doc, "div", "tnc-dg-layer", { role: "row" });
+			const content = h(doc, "div", "tnc-dg-content", { role: "gridcell", "aria-colspan": String(perWeek), "aria-label": ctx.fmt.range(wdays[0]!, wdays[wdays.length - 1]!) });
 			const sel = h(doc, "div", "tnc-sel-layer");
 			const more = h(doc, "div", "tnc-more-layer");
-			layer.append(sel, more);
-			row.append(layer);
+			content.append(sel, more);
+			layer.append(content);
+			row.append(dates, layer);
 			this.grid.append(row);
 			const dots = this.dotsMode
 				? cells.map((cell) => {
@@ -108,7 +113,7 @@ export class DayGridView<D> implements View {
 						return { box, pool: new ItemPool(ctx, box), count };
 					})
 				: null;
-			this.weeks.push({ days: wdays, row, cells, layer, sel, more, pool: new ItemPool(ctx, layer), dots });
+			this.weeks.push({ days: wdays, row, cells, layer, sel, more, pool: new ItemPool(ctx, content), dots });
 		}
 		this.scroller.append(this.grid);
 		this.el.append(this.scroller);

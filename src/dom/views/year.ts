@@ -31,7 +31,7 @@ export class YearView<D> implements View {
 			const first = month;
 			if (opts.navLinks) title.addEventListener("click", (ev) => this.ctx.navigate(first, ev as MouseEvent, "month"));
 			box.append(title);
-			const days = h(doc, "div", "tnc-ym-days", { role: "grid" });
+			const days = h(doc, "div", "tnc-ym-days", { role: "group", "aria-label": fmt.monthYear(month) });
 			const start = startOfWeek(month, ctx.firstDay);
 			for (let d = start; d < start + 7; d++) days.append(h(doc, "div", "tnc-ym-dow", { "aria-hidden": "true" }, fmt.weekdayNarrow(d)));
 			const len = daysInMonth(year, m);
@@ -76,6 +76,7 @@ export class YearView<D> implements View {
 				}),
 			);
 			const label = this.ctx.fmt.longDate(c.day);
+			c.el.setAttribute("aria-label", items.length ? `${label}, ${this.ctx.text.itemCount(items.length)}` : label);
 			c.el.title = items.length ? `${label}\n${items.slice(0, 8).map((n) => `• ${n.item.title}`).join("\n")}${items.length > 8 ? `\n${this.ctx.text.more(items.length - 8)}` : ""}` : label;
 		}
 	}
