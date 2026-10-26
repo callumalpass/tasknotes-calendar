@@ -78,3 +78,16 @@ test("summary views: date activation without a pointer", async ({ page }) => {
 	await page.keyboard.press("Space");
 	await expect.poll(() => lastLog(page, "dateclick")).toBe("dateclick 2026-10-21");
 });
+
+test("week: narrow containers scroll sideways instead of crushing day columns", async ({ page }) => {
+	await page.setViewportSize({ width: 400, height: 800 });
+	await open(page, "view=timeGridWeek&date=2026-10-21&tz=Europe%2FLondon&locale=en-GB");
+	const widths = await page.locator(".tnc-dh").evaluateAll((els) => els.map((el) => el.getBoundingClientRect().width));
+	expect(Math.min(...widths)).toBeGreaterThanOrEqual(63);
+	const scroller = page.locator(".tnc-tg-scroll");
+	await scroller.evaluate((el) => { el.scrollLeft = el.scrollWidth; });
+	// The time axis stays pinned while the days scroll under it.
+	const gutter = await page.locator(".tnc-gutter").boundingBox();
+	const box = await scroller.boundingBox();
+	expect(gutter && box && Math.abs(gutter.x - box.x)).toBeLessThan(2);
+});

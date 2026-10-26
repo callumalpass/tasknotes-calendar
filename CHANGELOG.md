@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Time-grid day columns keep a minimum width (`--tnc-col-min`, 64px); narrow containers scroll sideways with the time axis pinned instead of crushing week views on phones.
+
 ## 0.1.0
 
 Initial public release.
