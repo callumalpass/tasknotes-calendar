@@ -17,6 +17,12 @@ export interface ViewInfo {
 	/** Anchor date the view was built around. */
 	anchor: Day;
 	title: string;
+	/**
+	 * The days whose items the calendar can show: `range`, extended to the
+	 * end of the days a date strip is showing so their dots are right. Load
+	 * items for this range; `onRangeChange` fires when it changes too.
+	 */
+	dataRange: DateRange;
 }
 
 /** Where a pointer is over the calendar. */
@@ -311,6 +317,25 @@ export interface CalendarOptions<D = unknown> {
 	 */
 	listAgenda: boolean;
 	/**
+	 * Puts the agenda's date strip above the "day", "days" and "week" views
+	 * too. Picking a strip day moves the grid to it, and items dragged onto a
+	 * strip day move there at the same time.
+	 */
+	dateStrip: boolean;
+	/**
+	 * Agenda lists: a section above the first day, titled with this text, for
+	 * items `listLeadIncludes` picks out (overdue work, say). Those items show
+	 * there instead of under their day. Null for none.
+	 */
+	listLeadTitle: string | null;
+	listLeadIncludes?: (item: CalendarItem<D>) => boolean;
+	/** The lead section's header has an empty slot for host controls (a "Reschedule" button, say). */
+	listLeadDidMount?: (arg: { el: HTMLElement }) => void;
+	listLeadWillUnmount?: (arg: { el: HTMLElement }) => void;
+	/** Agenda lists: an add row with this label under every day, reported through `onListAdd`. Null for none. */
+	listAddText: string | null;
+	onListAdd?: (arg: DayArg & { jsEvent: MouseEvent | KeyboardEvent }) => void;
+	/**
 	 * Month cells: "full" draws bars and titled entries; "dots" draws every
 	 * item as a small dot that wraps across the cell, with a "+N" count when
 	 * they do not fit (`dayMaxEvents` caps the dots). In "dots" the day cell is
@@ -409,11 +434,11 @@ export interface CalendarOptions<D = unknown> {
 	dayHeaderContent?: (arg: DayArg) => Node | string | null | undefined;
 	dayHeaderDidMount?: (arg: DayHeaderArg) => void;
 	/**
-	 * The agenda strip's header has an empty slot after its arrows. Mount host
+	 * The date strip's header has an empty slot after its arrows. Mount host
 	 * controls (a layout menu, say) into `el`; the calendar leaves it alone.
 	 */
 	stripSlotDidMount?: (arg: { el: HTMLElement }) => void;
-	/** The agenda strip's slot is about to be removed. */
+	/** The date strip's slot is about to be removed. */
 	stripSlotWillUnmount?: (arg: { el: HTMLElement }) => void;
 	dayClassNames?: (arg: DayArg) => string[] | string | undefined;
 }
@@ -439,6 +464,9 @@ export function defaultOptions<D>(): CalendarOptions<D> {
 		listDayCount: 7,
 		listStart: "date",
 		listAgenda: false,
+		dateStrip: false,
+		listLeadTitle: null,
+		listAddText: null,
 		monthDisplay: "full",
 		timeZone: "local",
 		locale: undefined,
@@ -491,6 +519,9 @@ export const LAYOUT_KEYS = new Set<keyof CalendarOptions>([
 	"listDayCount",
 	"listStart",
 	"listAgenda",
+	"dateStrip",
+	"listLeadTitle",
+	"listAddText",
 	"monthDisplay",
 	"timeZone",
 	"locale",

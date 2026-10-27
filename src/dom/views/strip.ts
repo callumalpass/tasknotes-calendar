@@ -5,9 +5,11 @@ import { h } from "../dom";
 const SWIPE_PX = 40;
 
 /**
- * The agenda's date strip: one week, or the whole month when expanded. Days
- * with items carry a dot; the day at the top of the list is marked. Picking a
- * day hands it to the list, and swipes step a week (or a month).
+ * A date strip above the agenda or a time grid: one week, or the whole month
+ * when expanded. Days with items carry a dot; the focus day (the top of the
+ * list, or the grid's first day) is marked, and the rest of a grid's range is
+ * tinted. Picking a day hands it to the calendar, and swipes step a week (or
+ * a month).
  */
 export class DateStrip<D> {
 	readonly el: HTMLElement;
@@ -15,11 +17,15 @@ export class DateStrip<D> {
 	private readonly dows: HTMLElement;
 	private readonly grid: HTMLElement;
 	private readonly slot: HTMLElement;
+	private readonly todayBtn: HTMLButtonElement;
 	/** Day at the top of the list. */
 	private focus: Day;
 	/** First day of the week shown, or the month shown when expanded. */
 	private shown: Day;
 	private target: Day | null = null;
+	/** Days tinted as on screen besides the focus (a time grid's range). */
+	private range: { start: Day; end: Day } | null = null;
+	private shownKey = "";
 	private swipe: { id: number; x: number; y: number } | null = null;
 	private swallowClick = false;
 	expanded = false;
@@ -28,6 +34,8 @@ export class DateStrip<D> {
 		private readonly ctx: ViewContext<D>,
 		private readonly pick: (day: Day, ev: MouseEvent | KeyboardEvent) => void,
 		focus: Day,
+		/** Called when the days on show change, so their items can be loaded. */
+		private readonly onShown: () => void,
 	) {
 		const { doc, text } = ctx;
 		this.focus = focus;
@@ -40,8 +48,10 @@ export class DateStrip<D> {
 		const next = h(doc, "button", "tnc-strip-nav tnc-strip-next", { type: "button", "aria-label": text.next, title: text.next }, "›");
 		prev.addEventListener("click", () => this.step(-1));
 		next.addEventListener("click", () => this.step(1));
+		this.todayBtn = h(doc, "button", "tnc-strip-today", { type: "button" }, text.today);
+		this.todayBtn.addEventListener("click", (ev) => this.pick(ctx.today, ev));
 		this.slot = h(doc, "div", "tnc-strip-slot", { "data-tnc-no-drag": "" });
-		head.append(this.title, prev, next, this.slot);
+		head.append(this.title, this.todayBtn, prev, next, this.slot);
 		this.dows = h(doc, "div", "tnc-strip-dows", { "aria-hidden": "true" });
 		this.grid = h(doc, "div", "tnc-strip-grid", { role: "group" });
 		const handle = h(doc, "button", "tnc-strip-handle", { type: "button", tabindex: "-1", "aria-hidden": "true" });
@@ -57,13 +67,28 @@ export class DateStrip<D> {
 		ctx.opts.stripSlotDidMount?.({ el: this.slot });
 	}
 
-	/** The list scrolled: mark its top day and keep it in view. */
-	setFocus(day: Day): void {
-		if (day === this.focus) return;
-		this.focus = day;
-		if (!this.expanded) this.shown = startOfWeek(day, this.ctx.firstDay);
-		else if (startOfMonth(day) !== this.shown) this.shown = startOfMonth(day);
+	/** The list scrolled or the grid moved: mark the day and keep it in view. */
+	setFocus(day: Day, range: { start: Day; end: Day } | null = this.range): void {
+		const sameRange = range?.start === this.range?.start && range?.end === this.range?.end;
+		if (day === this.focus && sameRange) return;
+		this.range = range;
+		if (day !== this.focus) {
+			this.focus = day;
+			if (!this.expanded) this.shown = startOfWeek(day, this.ctx.firstDay);
+			else if (startOfMonth(day) !== this.shown) this.shown = startOfMonth(day);
+		}
 		this.draw();
+	}
+
+	/** Publishes the strip's height as `--tnc-strip-h`, for what sticks below it. */
+	measure(): void {
+		this.el.parentElement?.style.setProperty("--tnc-strip-h", `${this.el.offsetHeight}px`);
+	}
+
+	/** First day and end (exclusive) of the days on show. */
+	window(): { start: Day; end: Day } {
+		const days = this.days();
+		return { start: days[0]!, end: days[days.length - 1]! + 1 };
 	}
 
 	setExpanded(on: boolean): void {
@@ -108,6 +133,7 @@ export class DateStrip<D> {
 		this.title.replaceChildren(fmt.monthYear(titleDay), h(doc, "span", "tnc-strip-caret", { "aria-hidden": "true" }));
 		this.title.setAttribute("aria-expanded", String(this.expanded));
 		this.el.classList.toggle("is-expanded", this.expanded);
+		this.todayBtn.hidden = this.focus === ctx.today;
 		this.dows.replaceChildren(...days.slice(0, 7).map((d) => h(doc, "span", null, null, fmt.weekdayNarrow(d))));
 		const focused = this.grid.contains(doc.activeElement) ? (doc.activeElement as HTMLElement).dataset.date : undefined;
 		const month = ymdOfDay(this.shown).month;
@@ -124,6 +150,7 @@ export class DateStrip<D> {
 					"tnc-strip-day",
 					...ctx.dayClasses(d),
 					d === this.focus ? "is-focus" : "",
+					d !== this.focus && this.range && d >= this.range.start && d < this.range.end ? "is-in-range" : "",
 					count ? "has-items" : "",
 					this.expanded && ymdOfDay(d).month !== month ? "is-other-month" : "",
 					d === this.target ? "is-drop-target" : "",
@@ -145,6 +172,11 @@ export class DateStrip<D> {
 		this.grid.replaceChildren(...cells);
 		this.grid.setAttribute("aria-label", fmt.monthYear(titleDay));
 		if (focused) this.grid.querySelector<HTMLElement>(`[data-date="${focused}"]`)?.focus({ preventScroll: true });
+		const key = `${days[0]}:${days.length}`;
+		if (key !== this.shownKey) {
+			this.shownKey = key;
+			this.onShown();
+		}
 	}
 
 	private readonly onClick = (ev: MouseEvent) => {

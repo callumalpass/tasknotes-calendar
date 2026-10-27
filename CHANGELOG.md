@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.4
+
+### Added
+
+- `dateStrip` puts the agenda's date strip above day, multi-day and week views. Picking a strip day moves the grid there, and items can be dropped on strip days.
+- Agenda lists can show a lead section above the first day (`listLeadTitle`, `listLeadIncludes`, `listLeadDidMount`) and an add row under every day (`listAddText`, `onListAdd`).
+- The strip shows a Today chip when it is away from today.
+- `ViewInfo.dataRange` covers the days a strip shows past the visible range, so hosts can load items for every strip dot.
+
+### Changed
+
+- The date strip belongs to the calendar rather than the list, so it keeps its state (and any host controls in its slot) across navigation and view changes.
+
 ## 0.1.3
 
 ### Added

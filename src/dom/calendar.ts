@@ -38,6 +38,7 @@ import {
 } from "./options";
 import { DayGridView } from "./views/daygrid";
 import { ListView } from "./views/list";
+import { DateStrip } from "./views/strip";
 import { TimeGridView } from "./views/timegrid";
 import { TimelineView } from "./views/timeline";
 import { YearView } from "./views/year";
@@ -130,6 +131,9 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	slot = { min: 0, max: MINUTES_PER_DAY, duration: 30, snap: 30, scroll: 480 };
 	draggingId: string | null = null;
 	dragRow: { id: string; rowId: string } | null = null;
+	strip: DateStrip<D> | null = null;
+	private stripSize: ResizeObserver | null = null;
+	private rebuilding = false;
 
 	private readonly toolbarEl: HTMLElement;
 	private readonly viewHost: HTMLElement;
@@ -410,7 +414,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 
 	/** What is under a client point: a time slot, a day, or a timeline row and date. Null outside the view. */
 	hitTest(clientX: number, clientY: number): Hit | null {
-		return this.current?.hit(clientX, clientY) ?? null;
+		return this.hitAt(clientX, clientY);
 	}
 
 	/** Item elements currently rendered for an id. */
@@ -455,6 +459,9 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		this.unbindEvents();
 		this.current?.destroy();
 		this.current = null;
+		this.stripSize?.disconnect();
+		this.strip?.destroy();
+		this.strip = null;
 		this.root.remove();
 	}
 
@@ -757,13 +764,19 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		this.slot = { min, max, duration, snap, scroll: parseDurationMinutes(this.opts.scrollTime, 480) };
 
 		if (navigated) this.listEnd = null;
-		const rangeChanged = this.applyRange();
+		const prev = this.view as ViewInfo | undefined;
+		this.applyRange();
 		this.conflicts = dependencyConflicts(this.store);
 
 		this.root.className = "tnc";
 		this.root.classList.add(`tnc--${this.opts.view}`, `tnc--height-${this.opts.height}`);
 		if (!this.opts.timeGrid) this.root.classList.add("tnc--no-time-grid");
 		this.renderToolbar();
+		this.rebuilding = true;
+		this.syncStrip(navigated);
+		this.rebuilding = false;
+		this.view.dataRange = this.dataRangeFor(this.view.range);
+		const rangeChanged = rangeMoved(prev, this.view);
 
 		this.current?.destroy();
 		this.current = this.createView();
@@ -779,8 +792,8 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		if (rangeChanged) this.opts.onRangeChange?.(this.view);
 	}
 
-	/** Sets the visible days and view info from the anchor; true when the range moved. */
-	private applyRange(): boolean {
+	/** Sets the visible days and view info from the anchor. */
+	private applyRange(): void {
 		const { startDay, endDay } = this.computeRange();
 		const hidden = new Set(this.opts.hiddenDays);
 		if (!this.opts.weekends) {
@@ -798,10 +811,80 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 			start: new Date(toInstant(startDay, 0, this.zone)),
 			end: new Date(toInstant(endDay, 0, this.zone)),
 		};
-		const prevView = this.view;
-		this.view = { type: this.opts.view, range, anchor: this.anchor, title: "" };
+		this.view = { type: this.opts.view, range, anchor: this.anchor, title: "", dataRange: this.dataRangeFor(range) };
 		this.view.title = this.computeTitle(startDay, endDay);
-		return !prevView || prevView.type !== this.view.type || prevView.range.startDay !== startDay || prevView.range.endDay !== endDay;
+	}
+
+	/** The range, run on to the end of the strip's days so their dots are right. */
+	private dataRangeFor(range: DateRange): DateRange {
+		const end = this.strip ? Math.max(range.endDay, this.strip.window().end) : range.endDay;
+		if (end === range.endDay) return range;
+		return { ...range, endDay: end, end: new Date(toInstant(end, 0, this.zone)) };
+	}
+
+	/** Adds, updates or removes the date strip for the current view. */
+	private syncStrip(navigated: boolean): void {
+		const { view, listAgenda, dateStrip } = this.opts;
+		const list = view === "list";
+		const want = list ? listAgenda : dateStrip && (view === "day" || view === "days" || view === "week");
+		if (!want) {
+			if (!this.strip) return;
+			this.stripSize?.disconnect();
+			this.stripSize = null;
+			this.strip.destroy();
+			this.strip = null;
+			this.root.style.removeProperty("--tnc-strip-h");
+			return;
+		}
+		this.root.classList.add("tnc--has-strip");
+		const { startDay, endDay } = this.view.range;
+		if (!this.strip) {
+			const strip = new DateStrip(this, (day, ev) => this.pickStripDay(day, ev), startDay, () => this.stripShown());
+			this.strip = strip;
+			this.root.insertBefore(strip.el, this.viewHost);
+			const RO = (this.win as Window & { ResizeObserver?: typeof ResizeObserver }).ResizeObserver;
+			if (RO) {
+				this.stripSize = new RO(() => strip.measure());
+				this.stripSize.observe(strip.el);
+			}
+		}
+		// A list marks the day at its top as it scrolls; a grid marks its range.
+		if (!list) this.strip.setFocus(startDay, { start: startDay, end: endDay });
+		else if (navigated) this.strip.setFocus(startDay, null);
+		this.strip.draw();
+	}
+
+	private pickStripDay(day: Day, ev: MouseEvent | KeyboardEvent): void {
+		this.dateClick(day, ev);
+		if (this.agendaList()) {
+			this.showListDay(day);
+			return;
+		}
+		const { startDay, endDay } = this.view.range;
+		if (this.opts.view === "week" && day >= startDay && day < endDay) return;
+		this.anchor = day;
+		this.rebuild(true);
+	}
+
+	/** The strip moved to other days: load theirs too. */
+	private stripShown(): void {
+		if (!this.strip || this.rebuilding || !this.view) return;
+		const next = this.dataRangeFor(this.view.range);
+		if (next.endDay === this.view.dataRange.endDay) return;
+		this.view = { ...this.view, dataRange: next };
+		this.opts.onRangeChange?.(this.view);
+	}
+
+	/** What is under a point, the date strip included. */
+	private hitAt(x: number, y: number): Hit | null {
+		const strip = this.strip;
+		if (strip) {
+			const el = this.doc.elementFromPoint(x, y);
+			const day = el ? strip.dayAt(el) : null;
+			strip.markTarget(day !== null && this.draggingId ? day : null);
+			if (day !== null) return { kind: "day", day };
+		}
+		return this.current?.hit(x, y) ?? null;
 	}
 
 	private agendaList(): ListView<D> | null {
@@ -816,6 +899,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		this.listEnd = end;
 		this.applyRange();
 		this.current?.render(null);
+		this.strip?.draw();
 		this.opts.onRangeChange?.(this.view);
 	}
 
@@ -1256,7 +1340,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 
 	/** Proposal for the current pointer position. */
 	private track(s: Session<D>, ev: PointerEvent): void {
-		const hit = this.current?.hit(ev.clientX, ev.clientY) ?? null;
+		const hit = this.hitAt(ev.clientX, ev.clientY);
 		if (s.mode === "external") {
 			this.trackExternal(s, hit);
 			return;
@@ -1395,7 +1479,8 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 			return this.dayProposal(hit.day, hit.day + this.opts.defaultAllDayDays);
 		}
 		if (hit.kind === "day") {
-			const dd = hit.day - (grab.kind === "day" ? grab.day : hit.day);
+			// A strip day takes a grid item by the days between, keeping its time.
+			const dd = hit.day - (grab.kind === "timeline" ? hit.day : grab.day);
 			if (o.allDay) return this.dayProposal(o.startDay + dd, o.startDay + dd + days);
 			const startMs = this.civilToMs(this.civil(o.startMs) + dd * MINUTES_PER_DAY);
 			const endMs = this.civilToMs(this.civil(o.endMs) + dd * MINUTES_PER_DAY);
@@ -1546,7 +1631,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		this.draggingId = null;
 		this.dragRow = null;
 		if (draggedId) for (const el of this.elementsFor(draggedId)) el.classList.remove("is-dragging");
-		this.current?.dragEnded?.();
+		this.strip?.markTarget(null);
 		if (!s.active) return;
 
 		if (s.mode === "select") {
@@ -1869,4 +1954,15 @@ function scrollerOf(el: Element, axis: "x" | "y"): Element | null {
 		if (room && /auto|scroll|overlay/.test(overflow)) return p;
 	}
 	return doc.scrollingElement;
+}
+
+/** Whether hosts need to hear of a new view: its type, range or data range changed. */
+function rangeMoved(prev: ViewInfo | undefined, next: ViewInfo): boolean {
+	return (
+		!prev ||
+		prev.type !== next.type ||
+		prev.range.startDay !== next.range.startDay ||
+		prev.range.endDay !== next.range.endDay ||
+		prev.dataRange.endDay !== next.dataRange.endDay
+	);
 }
