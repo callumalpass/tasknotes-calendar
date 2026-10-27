@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `listAgenda` turns the list view into a phone-style agenda. A date strip sits above a list of every day, and more days load as you scroll. The strip shows a week, or the month after a tap on its title. It marks busy days and follows the day at the top of the list. Picking a strip day scrolls the list to it. Rows can be dragged onto another day or a strip day.
+
+### Fixed
+
+- On touch screens, a swipe that starts on a draggable item scrolls whatever actually scrolls. At `height: "auto"` that is the page, which these swipes did not scroll before.
+
 ## 0.1.2
 
 ### Changed

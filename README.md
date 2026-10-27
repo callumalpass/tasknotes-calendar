@@ -73,6 +73,7 @@ custom DOM. The exported `CalendarOptions<D>` type documents the full API.
 - `monthDisplay: "dots"` draws every item in a month cell as a small dot (`--tnc-dot-size`, `--tnc-dot-gap`) that wraps across the cell, with "+N" when they do not fit; `dayMaxEvents` caps the dots (`false` lets cells grow). The day cell is the tap target: dots ignore the pointer, are `aria-hidden`, get no content hook, and the cell is labelled "<date>, N items" (`text.itemCount`). Items in dots have `variant: "indicator"`; colour them with `color` or `itemDidMount` setting `--tnc-c`.
 - **"+N more" height**: day rows (and the time grid's all-day row) make room for the link at its rendered height, so a host may give it a 44px touch target (`--tnc-more-h`, or any min-height) without overflowing the row.
 - `listStart: "date" | "week"`: the list view starts at the date (default; FullCalendar `duration: { days: n }` lists, as the TaskNotes plugin and app used) or at the start of its week (FullCalendar's stock `listWeek`); week-aligned lists step by whole weeks.
+- `listAgenda: boolean`: turns the list view into a phone-style agenda. A date strip shows one week, or the whole month after a tap on its title, with a dot on busy days and the day at the top of the list marked. Below it, every day gets a section, empty days included, and more days load as the list nears its end. Picking a strip day scrolls the list to it and reports it through `onDateClick`. Rows can be dragged onto another day's section or a strip day; timed items keep their time. At `height: "auto"` the strip sticks to the top of the page; set `--tnc-sticky-top` to keep it below a fixed host header.
 
 ### Timeline
 
@@ -161,4 +162,4 @@ Append `-- --update-snapshots` to the test command to regenerate baselines
 the date, timezone, locale, viewport, colour scheme and motion preference.
 Keep the image version and the exact `@playwright/test` pin in sync.
 
-The playground reads URL parameters (`view`, `tz`, `locale`, `date`, `theme`, `stress`, `height`, `capacity`, `display=dots`, `listStart=week`) and exposes `window.tnc` for scripted checks.
+The playground reads URL parameters (`view`, `tz`, `locale`, `date`, `theme`, `stress`, `height`, `capacity`, `display=dots`, `listStart=week`, `agenda=1`) and exposes `window.tnc` for scripted checks.

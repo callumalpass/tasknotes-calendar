@@ -71,6 +71,7 @@ function options(): Opts {
 		capacityMinutes: capacity ? 6 * 60 : null,
 		monthDisplay: params.get("display") === "dots" ? "dots" : "full",
 		...(params.get("listStart") === "week" ? { listStart: "week" as const } : {}),
+		...(params.get("agenda") === "1" ? { listAgenda: true } : {}),
 		toolbar: { views: ["month", "week", "days", "day", "list", "year", "timeline"] },
 		timeline: {
 			rows: timeline.rows,

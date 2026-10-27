@@ -43,6 +43,8 @@ import { TimelineView } from "./views/timeline";
 import { YearView } from "./views/year";
 
 const EXTERNAL_ID = "__tnc_external__";
+/** How far an agenda list grows before picking a later day moves its start. */
+const MAX_AGENDA_DAYS = 366;
 
 type DragMode = "move" | "resize-end" | "resize-start" | "select" | "external";
 
@@ -72,7 +74,7 @@ interface Session<D> {
 	/** Last hit of an external drag. */
 	hit?: Hit | null;
 	/** Touch on a draggable item scrolls by hand: its `touch-action: none` stops native panning. */
-	pan?: { el: HTMLElement; left: number; top: number; active: boolean };
+	pan?: { x: Element | null; y: Element | null; left: number; top: number; active: boolean };
 }
 
 /**
@@ -133,6 +135,8 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	private readonly viewHost: HTMLElement;
 	private current: View | null = null;
 	private anchor: Day = 0;
+	/** End of an agenda list grown past its `listDayCount`. */
+	private listEnd: Day | null = null;
 	private session: Session<D> | null = null;
 	private selection: Selection | null = null;
 	private suppressClick = false;
@@ -390,6 +394,10 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		if (!p) return;
 		const day = p.kind === "day" ? p.day : dayOf(p.ms, this.zone);
 		const ms = p.kind === "day" ? toInstant(p.day, 0, this.zone) : p.ms;
+		if (this.agendaList()) {
+			this.showListDay(day);
+			return;
+		}
 		const { startDay, endDay } = this.view.range;
 		if (day < startDay || day >= endDay) {
 			this.anchor = day;
@@ -483,7 +491,9 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	}
 
 	isEditable(n: NormalizedItem<D>, what: "start" | "duration"): boolean {
-		if (n.id === EXTERNAL_ID || this.opts.view === "list" || this.opts.view === "year") return false;
+		if (n.id === EXTERNAL_ID || this.opts.view === "year") return false;
+		// Agenda rows move between days; list rows have no length to resize.
+		if (this.opts.view === "list" && (!this.opts.listAgenda || what === "duration")) return false;
 		const it = n.item;
 		const base = it.editable ?? this.opts.editable;
 		const specific = what === "start" ? it.startEditable : it.durationEditable;
@@ -704,7 +714,8 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 			}
 			case "list": {
 				const s = this.opts.listStart === "week" ? startOfWeek(a, this.firstDay) : a;
-				return { startDay: s, endDay: s + Math.max(1, listDayCount) };
+				const end = s + Math.max(1, listDayCount);
+				return { startDay: s, endDay: this.opts.listAgenda && this.listEnd !== null ? Math.max(end, this.listEnd) : end };
 			}
 			case "month": {
 				const s = startOfWeek(startOfMonth(a), this.firstDay);
@@ -745,6 +756,31 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		const snap = Math.max(1, parseDurationMinutes(this.opts.snapDuration ?? null, duration));
 		this.slot = { min, max, duration, snap, scroll: parseDurationMinutes(this.opts.scrollTime, 480) };
 
+		if (navigated) this.listEnd = null;
+		const rangeChanged = this.applyRange();
+		this.conflicts = dependencyConflicts(this.store);
+
+		this.root.className = "tnc";
+		this.root.classList.add(`tnc--${this.opts.view}`, `tnc--height-${this.opts.height}`);
+		if (!this.opts.timeGrid) this.root.classList.add("tnc--no-time-grid");
+		this.renderToolbar();
+
+		this.current?.destroy();
+		this.current = this.createView();
+		this.viewHost.replaceChildren(this.current.el);
+		this.current.render(null);
+		if (keep && this.current instanceof TimelineView) {
+			this.current.setScroll({ top: keep.top, left: 0 });
+			this.current.placeInstant(keep.ms, keep.vx);
+		} else if (scroll) this.current.setScroll(scroll);
+		else if (this.current instanceof TimeGridView) this.current.scrollToTime(this.slot.scroll);
+		else if (this.current instanceof TimelineView) this.current.scrollToDay(this.anchor);
+
+		if (rangeChanged) this.opts.onRangeChange?.(this.view);
+	}
+
+	/** Sets the visible days and view info from the anchor; true when the range moved. */
+	private applyRange(): boolean {
 		const { startDay, endDay } = this.computeRange();
 		const hidden = new Set(this.opts.hiddenDays);
 		if (!this.opts.weekends) {
@@ -765,27 +801,37 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		const prevView = this.view;
 		this.view = { type: this.opts.view, range, anchor: this.anchor, title: "" };
 		this.view.title = this.computeTitle(startDay, endDay);
-		this.conflicts = dependencyConflicts(this.store);
+		return !prevView || prevView.type !== this.view.type || prevView.range.startDay !== startDay || prevView.range.endDay !== endDay;
+	}
 
-		this.root.className = "tnc";
-		this.root.classList.add(`tnc--${this.opts.view}`, `tnc--height-${this.opts.height}`);
-		if (!this.opts.timeGrid) this.root.classList.add("tnc--no-time-grid");
-		this.renderToolbar();
+	private agendaList(): ListView<D> | null {
+		return this.opts.view === "list" && this.opts.listAgenda && this.current instanceof ListView ? this.current : null;
+	}
 
-		this.current?.destroy();
-		this.current = this.createView();
-		this.viewHost.replaceChildren(this.current.el);
-		this.current.render(null);
-		if (keep && this.current instanceof TimelineView) {
-			this.current.setScroll({ top: keep.top, left: 0 });
-			this.current.placeInstant(keep.ms, keep.vx);
-		} else if (scroll) this.current.setScroll(scroll);
-		else if (this.current instanceof TimeGridView) this.current.scrollToTime(this.slot.scroll);
-		else if (this.current instanceof TimelineView) this.current.scrollToDay(this.anchor);
+	extendList(endDay: Day): void {
+		if (!this.agendaList()) return;
+		const { startDay, endDay: current } = this.view.range;
+		const end = Math.min(endDay, startDay + MAX_AGENDA_DAYS);
+		if (end <= current) return;
+		this.listEnd = end;
+		this.applyRange();
+		this.current?.render(null);
+		this.opts.onRangeChange?.(this.view);
+	}
 
-		const rangeChanged =
-			!prevView || prevView.type !== this.view.type || prevView.range.startDay !== startDay || prevView.range.endDay !== endDay;
-		if (rangeChanged) this.opts.onRangeChange?.(this.view);
+	showListDay(day: Day): void {
+		if (!this.agendaList()) return;
+		if (day < this.view.range.startDay || day - this.view.range.startDay >= MAX_AGENDA_DAYS) {
+			this.anchor = day;
+			this.rebuild(true);
+		}
+		// Enough days after it that it can reach the top.
+		this.extendList(day + 2 * Math.max(7, this.opts.listDayCount));
+		this.agendaList()?.scrollToDay(day);
+	}
+
+	dateClick(day: Day, jsEvent: MouseEvent | KeyboardEvent): void {
+		this.clickSlot({ kind: "day", day }, jsEvent, true);
 	}
 
 	private createView(): View {
@@ -1118,8 +1164,10 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		};
 		this.session = s;
 		if (touch && itemEl?.classList.contains("is-draggable")) {
-			const el = itemEl.closest<HTMLElement>(".tnc-tg-scroll, .tnc-dg-scroll, .tnc-tl-scroll, .tnc-list-scroll, .tnc-year-scroll");
-			if (el) s.pan = { el, left: el.scrollLeft, top: el.scrollTop, active: false };
+			// The nearest boxes that scroll, which is the page itself at auto height.
+			const x = scrollerOf(itemEl, "x");
+			const y = scrollerOf(itemEl, "y");
+			s.pan = { x, y, left: x?.scrollLeft ?? 0, top: y?.scrollTop ?? 0, active: false };
 		}
 		if (touch) {
 			s.timer = this.win.setTimeout(() => {
@@ -1164,8 +1212,8 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 					if (!pan.active && s.timer !== null) this.win.clearTimeout(s.timer);
 					s.timer = null;
 					pan.active = true;
-					pan.el.scrollLeft = pan.left - (ev.clientX - s.x0);
-					pan.el.scrollTop = pan.top - (ev.clientY - s.y0);
+					if (pan.x) pan.x.scrollLeft = pan.left - (ev.clientX - s.x0);
+					if (pan.y) pan.y.scrollTop = pan.top - (ev.clientY - s.y0);
 				} else if (dist > 8) this.endSession(null, true);
 				return;
 			}
@@ -1498,6 +1546,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		this.draggingId = null;
 		this.dragRow = null;
 		if (draggedId) for (const el of this.elementsFor(draggedId)) el.classList.remove("is-dragging");
+		this.current?.dragEnded?.();
 		if (!s.active) return;
 
 		if (s.mode === "select") {
@@ -1810,3 +1859,14 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	};
 }
 
+/** Nearest ancestor that scrolls along `axis`, else the document's scroller. */
+function scrollerOf(el: Element, axis: "x" | "y"): Element | null {
+	const doc = el.ownerDocument;
+	const win = doc.defaultView;
+	for (let p = el.parentElement; p && p !== doc.body && p !== doc.documentElement; p = p.parentElement) {
+		const overflow = win?.getComputedStyle(p)[axis === "x" ? "overflowX" : "overflowY"] ?? "";
+		const room = axis === "x" ? p.scrollWidth > p.clientWidth : p.scrollHeight > p.clientHeight;
+		if (room && /auto|scroll|overlay/.test(overflow)) return p;
+	}
+	return doc.scrollingElement;
+}
