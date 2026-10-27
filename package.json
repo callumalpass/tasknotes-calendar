@@ -1,6 +1,6 @@
 {
 	"name": "@tasknotes/calendar",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"description": "Task-native calendar engine for TaskNotes: incremental layout, time grid, month, list, year and timeline views.",
 	"license": "MIT",
 	"type": "module",
