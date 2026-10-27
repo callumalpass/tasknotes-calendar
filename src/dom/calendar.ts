@@ -109,8 +109,9 @@ function sameProposal(a: Proposal | null, b: Proposal | null): boolean {
  * popout windows: all listeners, timers and observers use the element's window.
  */
 export class Calendar<D = unknown> implements ViewContext<D> {
-	readonly doc: Document;
-	readonly win: Window;
+	/** The document/window the calendar currently lives in; see `adopt()`. */
+	doc: Document;
+	win: Window;
 	readonly root: HTMLElement;
 	readonly store: ItemStore<D>;
 	readonly meta = new WeakMap<Element, ElMeta<D>>();
@@ -173,11 +174,41 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		this.bindEvents();
 		this.rebuild(true);
 		this.scheduleTick();
+		this.observeResize();
+	}
+
+	private observeResize(): void {
+		this.resizeObs?.disconnect();
 		const RO = (this.win as Window & { ResizeObserver?: typeof ResizeObserver }).ResizeObserver;
 		if (RO) {
 			this.resizeObs = new RO(() => this.current?.resize?.());
 			this.resizeObs.observe(this.root);
 		}
+	}
+
+	private readonly onAdoptCheck = () => {
+		this.adopt();
+	};
+
+	/**
+	 * Hosts may move a live calendar into another window (e.g. Obsidian's
+	 * "Move to new window"). Listeners, timers and observers belong to a window,
+	 * so rebind them to the root's current document and rebuild the view there.
+	 */
+	adopt(): void {
+		const doc = this.root.ownerDocument;
+		if (this.destroyed || doc === this.doc || this.session) return;
+		const old = this.win;
+		if (this.timer !== null) old.clearTimeout(this.timer);
+		if (this.frame !== null) old.cancelAnimationFrame(this.frame);
+		this.timer = this.frame = null;
+		this.doc.removeEventListener("pointerdown", this.onDocPointerDown, true);
+		this.doc = doc;
+		this.win = doc.defaultView ?? old;
+		this.doc.addEventListener("pointerdown", this.onDocPointerDown, true);
+		this.observeResize();
+		this.rebuild(false);
+		this.scheduleTick();
 	}
 
 	/* ================================================================ public */
@@ -817,6 +848,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	private applyChange(change: StoreChange): void {
 		if (!change.added.length && !change.updated.length && !change.removed.length && !change.days.size && !change.spans) return;
 		this.conflicts = dependencyConflicts(this.store);
+		this.adopt();
 		this.pendingChange = this.pendingChange ? this.merge(this.pendingChange, change) : change;
 		// Coalesce bursts of updates into one frame; drags render immediately.
 		if (this.session?.active) {
@@ -999,6 +1031,8 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		r.addEventListener("drop", this.onNativeDrop);
 		// Must exist before touchstart: Chrome decides then whether a touch sequence can be blocked.
 		r.addEventListener("touchmove", this.onTouchMove, { passive: false });
+		r.addEventListener("pointerover", this.onAdoptCheck);
+		r.addEventListener("focusin", this.onAdoptCheck);
 		this.doc.addEventListener("pointerdown", this.onDocPointerDown, true);
 	}
 
@@ -1016,6 +1050,8 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		r.removeEventListener("dragleave", this.onNativeDragLeave);
 		r.removeEventListener("drop", this.onNativeDrop);
 		r.removeEventListener("touchmove", this.onTouchMove);
+		r.removeEventListener("pointerover", this.onAdoptCheck);
+		r.removeEventListener("focusin", this.onAdoptCheck);
 		this.doc.removeEventListener("pointerdown", this.onDocPointerDown, true);
 		this.listenDoc(false);
 	}

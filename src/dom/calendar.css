@@ -32,6 +32,8 @@
 	--tnc-dot-size: 8px;
 	--tnc-dot-gap: 3px;
 	--tnc-gutter-w: 52px;
+	/* Narrowest a time-grid day column gets; narrower containers scroll sideways. */
+	--tnc-col-min: 64px;
 	--tnc-weeknum-w: 32px;
 	--tnc-dg-top-h: 24px;
 	--tnc-day-min-h: 92px;
@@ -462,6 +464,18 @@
 	display: grid;
 	grid-template-columns: var(--tnc-cols);
 }
+.tnc-tg-top,
+.tnc-tg-body {
+	min-width: calc(var(--tnc-gutter-w) + var(--tnc-ncols, 1) * var(--tnc-col-min));
+}
+.tnc-gutter-head,
+.tnc-gutter-label,
+.tnc-gutter {
+	position: sticky;
+	left: 0;
+	z-index: 6;
+	background: var(--tnc-surface);
+}
 .tnc-gutter-head {
 	display: flex;
 	align-items: flex-end;
@@ -557,7 +571,6 @@
 	position: relative;
 }
 .tnc-gutter {
-	position: relative;
 	border-right: 1px solid var(--tnc-line);
 }
 .tnc-slot-label {

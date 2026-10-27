@@ -97,8 +97,9 @@ export class TimeGridView<D> implements View {
 		const { ctx } = this;
 		const { doc, opts, days, today } = ctx;
 		this.weights = days.map((d) => (d === today && opts.todayWidth > 1 && days.length > 1 ? opts.todayWidth : 1));
-		const tpl = `var(--tnc-gutter-w) ${this.weights.map((w) => `minmax(0, ${w}fr)`).join(" ")}`;
+		const tpl = `var(--tnc-gutter-w) ${this.weights.map((w) => `minmax(var(--tnc-col-min), ${w}fr)`).join(" ")}`;
 		this.el.style.setProperty("--tnc-cols", tpl);
+		this.el.style.setProperty("--tnc-ncols", String(days.length));
 
 		// Header
 		const gutterHead = h(doc, "div", "tnc-gutter-head", { role: "columnheader" });
