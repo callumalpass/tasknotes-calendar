@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.2
+
+### Changed
+
+- Year views narrower than 520px (phones, sidebars) show two compact months a row. Days are shaded by how busy they are, with no dots, and any day with items is visibly shaded.
+
+### Fixed
+
+- Clicking or tapping a day in the year view reports it through `onDateClick`. Before, only Enter or Space on a focused day did.
+- The calendar keeps its sticky headers and popovers in its own stacking context, so host overlays such as side sheets and dialogs draw above the week header and all-day row.
+
 ## 0.1.1
 
 ### Fixed

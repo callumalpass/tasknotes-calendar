@@ -77,6 +77,9 @@ test("summary views: date activation without a pointer", async ({ page }) => {
 	await day.focus();
 	await page.keyboard.press("Space");
 	await expect.poll(() => lastLog(page, "dateclick")).toBe("dateclick 2026-10-21");
+	await page.locator('.tnc-ym-day[data-date="2026-10-22"]').click();
+	await expect.poll(() => lastLog(page, "dateclick")).toBe("dateclick 2026-10-22");
+	expect(await page.evaluate(() => window.tnc.log.filter((l) => l.startsWith("dateclick")).length)).toBe(2);
 });
 
 test("week: narrow containers scroll sideways instead of crushing day columns", async ({ page }) => {
@@ -90,4 +93,18 @@ test("week: narrow containers scroll sideways instead of crushing day columns", 
 	const gutter = await page.locator(".tnc-gutter").boundingBox();
 	const box = await scroller.boundingBox();
 	expect(gutter && box && Math.abs(gutter.x - box.x)).toBeLessThan(2);
+});
+
+test("year: narrow calendars show two compact months a row", async ({ page }) => {
+	await open(page, "view=multiMonthYear&date=2026-10-21&tz=Europe%2FLondon&locale=en-GB");
+	// A phone-width calendar, whatever the playground's own layout does.
+	await page.locator(".tnc").evaluate((el) => {
+		(el as HTMLElement).style.width = "360px";
+	});
+	const months = page.locator(".tnc-ym");
+	const [first, second, third] = await Promise.all([0, 1, 2].map((i) => months.nth(i).boundingBox()));
+	expect(second!.y).toBe(first!.y);
+	expect(third!.y).toBeGreaterThan(first!.y);
+	await expect(page.locator(".tnc-ym-dots").first()).toBeHidden();
+	await expect(page.locator(".tnc")).toHaveScreenshot("year-narrow.png", { animations: "disabled" });
 });
