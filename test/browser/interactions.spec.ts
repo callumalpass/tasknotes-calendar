@@ -429,6 +429,30 @@ test.describe("agenda list", () => {
 		await expect.poll(() => lastLog(page, "drop")).toBe("drop due-1 2026-10-24T17:00 → 2026-10-24T17:30");
 		await expect(page.locator(".tnc-strip-day.is-drop-target")).toHaveCount(0);
 	});
+
+	test("a lead section holds its items above the days, and Today returns to it", async ({ page }) => {
+		await open(page, "view=listWeek&agenda=1&lead=1");
+		const lead = page.locator(".tnc-list-lead");
+		await expect(lead.locator('.tnc-item[data-id="due-1"]')).toHaveCount(1);
+		await expect(page.locator('.tnc-list-section:not(.tnc-list-lead) .tnc-item[data-id="due-1"]')).toHaveCount(0);
+		await expect(page.locator(".tnc-strip-today")).toBeHidden();
+		await page.locator('.tnc-strip-day[data-date="2026-10-24"]').click();
+		await page.locator(".tnc-strip-today").click();
+		const strip = (await page.locator(".tnc-strip").boundingBox())!;
+		const top = (await lead.boundingBox())!;
+		expect(Math.abs(top.y - (strip.y + strip.height))).toBeLessThan(4);
+		await page.locator('.tnc-list-section[data-date="2026-10-22"] .tnc-list-add').click();
+		expect(await lastLog(page, "add")).toBe("add 2026-10-22");
+	});
+});
+
+test("the day view's strip moves the grid and takes drops at the same time", async ({ page }) => {
+	await open(page, "view=timeGridDay&agenda=1");
+	await page.locator('.tnc-strip-day[data-date="2026-10-19"]').click();
+	await expect(page.locator(".tnc-strip-day.is-focus")).toHaveAttribute("data-date", "2026-10-19");
+	const from = await center(item(page, "scheduled-1")); // Mon 19th 09:00-10:30
+	await drag(page, from, await center(page.locator('.tnc-strip-day[data-date="2026-10-20"]')));
+	await expect.poll(() => lastLog(page, "drop")).toBe("drop scheduled-1 2026-10-20T09:00 → 2026-10-20T10:30");
 });
 
 test("@touch agenda rows scroll the page at auto height", async ({ page }) => {

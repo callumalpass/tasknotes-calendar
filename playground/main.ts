@@ -71,7 +71,17 @@ function options(): Opts {
 		capacityMinutes: capacity ? 6 * 60 : null,
 		monthDisplay: params.get("display") === "dots" ? "dots" : "full",
 		...(params.get("listStart") === "week" ? { listStart: "week" as const } : {}),
-		...(params.get("agenda") === "1" ? { listAgenda: true } : {}),
+		...(params.get("agenda") === "1"
+			? {
+					listAgenda: true,
+					dateStrip: true,
+					listAddText: "Add task",
+					onListAdd: ({ dateStr }: { dateStr: string }) => record(`add ${dateStr}`),
+				}
+			: {}),
+		...(params.get("lead") === "1"
+			? { listLeadTitle: "Due", listLeadIncludes: (item: { data?: DemoData }) => item.data?.kind === "due" }
+			: {}),
 		toolbar: { views: ["month", "week", "days", "day", "list", "year", "timeline"] },
 		timeline: {
 			rows: timeline.rows,

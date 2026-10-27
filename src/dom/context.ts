@@ -5,6 +5,7 @@ import type { NormalizedItem } from "../core/types";
 import type { TimeZone } from "../core/zone";
 import type { Formatter } from "./format";
 import type { CalendarOptions, CalendarText, DayArg, Hit, ItemVariant, ViewInfo } from "./options";
+import type { DateStrip } from "./views/strip";
 
 export type Variant = ItemVariant;
 
@@ -65,8 +66,10 @@ export interface ViewContext<D = unknown> {
 	suppressNextClick(): void;
 	/** Row override for the item being dragged in the timeline. */
 	readonly dragRow: { id: string; rowId: string } | null;
-	/** Reports a day picked outside the grid (year days, the agenda strip) through `onDateClick`. */
+	/** Reports a day picked outside the grid (year days) through `onDateClick`. */
 	dateClick(day: Day, jsEvent: MouseEvent | KeyboardEvent): void;
+	/** The date strip, when the view has one. */
+	readonly strip: DateStrip<D> | null;
 	/** Agenda lists: grows the range to end at `endDay`. */
 	extendList(endDay: Day): void;
 	/** Agenda lists: brings `day` to the top, moving the range to reach it. */
@@ -87,8 +90,6 @@ export interface View {
 	scrollToTime?(minute: number): void;
 	/** Item elements currently shown for an id. */
 	elementsFor(id: string): HTMLElement[];
-	/** A drag ended, dropped or not. */
-	dragEnded?(): void;
 	destroy(): void;
 }
 
