@@ -40,6 +40,8 @@
 	--tnc-item-c: var(--tnc-accent);
 
 	position: relative;
+	/* Keep the calendar's own layers (sticky headers, popovers) below host overlays. */
+	isolation: isolate;
 	display: flex;
 	flex-direction: column;
 	min-height: 0;
