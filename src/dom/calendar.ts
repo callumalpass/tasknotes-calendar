@@ -1426,7 +1426,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		return sel;
 	}
 
-	private clickSlot(hit: Hit, ev: PointerEvent | KeyboardEvent, touch: boolean): void {
+	private clickSlot(hit: Hit, ev: MouseEvent | KeyboardEvent, touch: boolean): void {
 		if (hit.kind === "timeline" && !hit.overTrack) return;
 		const day = hit.day;
 		if (this.opts.onDateClick) {
@@ -1456,7 +1456,8 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		if (!sel) return;
 		this.selection = sel;
 		this.current?.showSelection(sel);
-		this.fireSelect(sel, ev);
+		// Only pointer sessions select here; year-day clicks pass `touch`.
+		this.fireSelect(sel, ev as PointerEvent | KeyboardEvent);
 	}
 
 	private fireSelect(sel: Selection, ev: PointerEvent | KeyboardEvent | null): void {
@@ -1601,6 +1602,14 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	};
 
 	private readonly onClick = (ev: MouseEvent) => {
+		// Year days are buttons, which pointer sessions skip; their click covers
+		// mouse, touch and keyboard alike.
+		const yearDay = (ev.target as Element).closest?.<HTMLElement>(".tnc-ym-day");
+		if (yearDay && this.root.contains(yearDay)) {
+			const day = parseDay(yearDay.dataset.date ?? "");
+			if (day !== null) this.clickSlot({ kind: "day", day }, ev, true);
+			return;
+		}
 		const el = this.itemElFrom(ev.target);
 		if (!el || (ev.target as Element).closest(".tnc-resize, .tnc-port")) return;
 		const meta = this.meta.get(el)!;
@@ -1667,7 +1676,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 			return;
 		}
 		const target = ev.target as HTMLElement;
-		if ((ev.key === "Enter" || ev.key === " ") && target.matches(".tnc-ym-day, .tnc-dg-day[tabindex]")) {
+		if ((ev.key === "Enter" || ev.key === " ") && target.matches(".tnc-dg-day[tabindex]")) {
 			const day = parseDay(target.dataset.date ?? "");
 			if (day !== null) {
 				ev.preventDefault();

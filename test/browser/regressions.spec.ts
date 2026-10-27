@@ -77,6 +77,9 @@ test("summary views: date activation without a pointer", async ({ page }) => {
 	await day.focus();
 	await page.keyboard.press("Space");
 	await expect.poll(() => lastLog(page, "dateclick")).toBe("dateclick 2026-10-21");
+	await page.locator('.tnc-ym-day[data-date="2026-10-22"]').click();
+	await expect.poll(() => lastLog(page, "dateclick")).toBe("dateclick 2026-10-22");
+	expect(await page.evaluate(() => window.tnc.log.filter((l) => l.startsWith("dateclick")).length)).toBe(2);
 });
 
 test("week: narrow containers scroll sideways instead of crushing day columns", async ({ page }) => {
