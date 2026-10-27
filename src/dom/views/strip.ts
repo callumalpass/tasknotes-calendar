@@ -14,6 +14,7 @@ export class DateStrip<D> {
 	private readonly title: HTMLButtonElement;
 	private readonly dows: HTMLElement;
 	private readonly grid: HTMLElement;
+	private readonly slot: HTMLElement;
 	/** Day at the top of the list. */
 	private focus: Day;
 	/** First day of the week shown, or the month shown when expanded. */
@@ -39,7 +40,8 @@ export class DateStrip<D> {
 		const next = h(doc, "button", "tnc-strip-nav tnc-strip-next", { type: "button", "aria-label": text.next, title: text.next }, "›");
 		prev.addEventListener("click", () => this.step(-1));
 		next.addEventListener("click", () => this.step(1));
-		head.append(this.title, prev, next);
+		this.slot = h(doc, "div", "tnc-strip-slot", { "data-tnc-no-drag": "" });
+		head.append(this.title, prev, next, this.slot);
 		this.dows = h(doc, "div", "tnc-strip-dows", { "aria-hidden": "true" });
 		this.grid = h(doc, "div", "tnc-strip-grid", { role: "group" });
 		const handle = h(doc, "button", "tnc-strip-handle", { type: "button", tabindex: "-1", "aria-hidden": "true" });
@@ -52,6 +54,7 @@ export class DateStrip<D> {
 		this.el.addEventListener("pointercancel", this.onPointerCancel);
 		this.el.addEventListener("click", this.onClickCapture, true);
 		this.draw();
+		ctx.opts.stripSlotDidMount?.({ el: this.slot });
 	}
 
 	/** The list scrolled: mark its top day and keep it in view. */
@@ -198,6 +201,7 @@ export class DateStrip<D> {
 	};
 
 	destroy(): void {
+		this.ctx.opts.stripSlotWillUnmount?.({ el: this.slot });
 		this.el.remove();
 	}
 }

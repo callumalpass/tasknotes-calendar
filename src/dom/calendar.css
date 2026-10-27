@@ -935,6 +935,13 @@
 .tnc-strip.is-expanded .tnc-strip-caret {
 	transform: rotate(180deg);
 }
+.tnc-strip-slot {
+	display: flex;
+	align-items: center;
+}
+.tnc-strip-slot:empty {
+	display: none;
+}
 .tnc-strip-nav {
 	width: 32px;
 	height: 32px;

@@ -408,6 +408,13 @@ export interface CalendarOptions<D = unknown> {
 	listItemContent?: (arg: ItemArg<D>) => Node | null | undefined;
 	dayHeaderContent?: (arg: DayArg) => Node | string | null | undefined;
 	dayHeaderDidMount?: (arg: DayHeaderArg) => void;
+	/**
+	 * The agenda strip's header has an empty slot after its arrows. Mount host
+	 * controls (a layout menu, say) into `el`; the calendar leaves it alone.
+	 */
+	stripSlotDidMount?: (arg: { el: HTMLElement }) => void;
+	/** The agenda strip's slot is about to be removed. */
+	stripSlotWillUnmount?: (arg: { el: HTMLElement }) => void;
 	dayClassNames?: (arg: DayArg) => string[] | string | undefined;
 }
 
