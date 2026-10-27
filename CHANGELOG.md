@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- Year views narrower than 520px (phones, sidebars) show two compact months a row. Days are shaded by how busy they are, with no dots, and any day with items is visibly shaded.
+
 ### Fixed
 
 - The calendar keeps its sticky headers and popovers in its own stacking context, so host overlays such as side sheets and dialogs draw above the week header and all-day row.

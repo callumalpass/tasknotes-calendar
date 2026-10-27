@@ -880,6 +880,8 @@
 	display: flex;
 	flex-direction: column;
 	min-height: 0;
+	/* Narrow calendars (phones, sidebars) use the compact year below. */
+	container-type: inline-size;
 }
 .tnc-year-scroll {
 	flex: 1 1 auto;
@@ -948,6 +950,35 @@
 	height: 4px;
 	border-radius: 50%;
 	background: var(--tnc-c, var(--tnc-accent));
+}
+
+/* Two months a row: each day is a shaded square, and its count is in its label. */
+@container (max-width: 520px) {
+	.tnc-year-scroll {
+		padding: 8px 4px;
+	}
+	.tnc-year-grid {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 14px 12px;
+	}
+	.tnc-ym-title {
+		font-size: 12px;
+		padding-bottom: 4px;
+	}
+	.tnc-ym-days {
+		gap: 1px;
+	}
+	.tnc-ym-day {
+		border-radius: 4px;
+		font-size: 10px;
+	}
+	/* Without dots, one item must still read as busy. */
+	.tnc-ym-day.has-items {
+		background: color-mix(in srgb, var(--tnc-accent) calc((0.3 + var(--tnc-heat) * 0.7) * 50%), transparent);
+	}
+	.tnc-ym-dots {
+		display: none;
+	}
 }
 
 /* -------------------------------------------------------------- timeline */
