@@ -65,6 +65,12 @@ export interface ViewContext<D = unknown> {
 	suppressNextClick(): void;
 	/** Row override for the item being dragged in the timeline. */
 	readonly dragRow: { id: string; rowId: string } | null;
+	/** Reports a day picked outside the grid (year days, the agenda strip) through `onDateClick`. */
+	dateClick(day: Day, jsEvent: MouseEvent | KeyboardEvent): void;
+	/** Agenda lists: grows the range to end at `endDay`. */
+	extendList(endDay: Day): void;
+	/** Agenda lists: brings `day` to the top, moving the range to reach it. */
+	showListDay(day: Day): void;
 }
 
 export interface View {
@@ -81,6 +87,8 @@ export interface View {
 	scrollToTime?(minute: number): void;
 	/** Item elements currently shown for an id. */
 	elementsFor(id: string): HTMLElement[];
+	/** A drag ended, dropped or not. */
+	dragEnded?(): void;
 	destroy(): void;
 }
 

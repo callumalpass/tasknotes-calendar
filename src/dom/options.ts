@@ -303,6 +303,14 @@ export interface CalendarOptions<D = unknown> {
 	 */
 	listStart: "date" | "week";
 	/**
+	 * Turns the "list" view into a phone-style agenda: a date strip (one week,
+	 * or the month when expanded) above a list of every day, empty ones
+	 * included, that loads more days as it nears its end. The strip marks the
+	 * day at the top of the list, picking a day scrolls to it, and items
+	 * dragged onto a strip day or another day's section move there.
+	 */
+	listAgenda: boolean;
+	/**
 	 * Month cells: "full" draws bars and titled entries; "dots" draws every
 	 * item as a small dot that wraps across the cell, with a "+N" count when
 	 * they do not fit (`dayMaxEvents` caps the dots). In "dots" the day cell is
@@ -400,6 +408,13 @@ export interface CalendarOptions<D = unknown> {
 	listItemContent?: (arg: ItemArg<D>) => Node | null | undefined;
 	dayHeaderContent?: (arg: DayArg) => Node | string | null | undefined;
 	dayHeaderDidMount?: (arg: DayHeaderArg) => void;
+	/**
+	 * The agenda strip's header has an empty slot after its arrows. Mount host
+	 * controls (a layout menu, say) into `el`; the calendar leaves it alone.
+	 */
+	stripSlotDidMount?: (arg: { el: HTMLElement }) => void;
+	/** The agenda strip's slot is about to be removed. */
+	stripSlotWillUnmount?: (arg: { el: HTMLElement }) => void;
 	dayClassNames?: (arg: DayArg) => string[] | string | undefined;
 }
 
@@ -423,6 +438,7 @@ export function defaultOptions<D>(): CalendarOptions<D> {
 		dayCount: 3,
 		listDayCount: 7,
 		listStart: "date",
+		listAgenda: false,
 		monthDisplay: "full",
 		timeZone: "local",
 		locale: undefined,
@@ -474,6 +490,7 @@ export const LAYOUT_KEYS = new Set<keyof CalendarOptions>([
 	"dayCount",
 	"listDayCount",
 	"listStart",
+	"listAgenda",
 	"monthDisplay",
 	"timeZone",
 	"locale",

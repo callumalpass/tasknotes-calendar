@@ -402,3 +402,48 @@ test("a calendar moved into another window keeps dragging (popout windows)", asy
 	await drag(page, from, { x: target.x + target.width / 2, y: from.y });
 	await expect.poll(() => lastLog(page, "drop")).toMatch(/^drop scheduled-1 2026-10-20T/);
 });
+
+test.describe("agenda list", () => {
+	test("the strip picks a day, follows the list, and more days load near the end", async ({ page }) => {
+		await open(page, "view=listWeek&agenda=1");
+		await expect(page.locator(".tnc-strip-day.is-focus")).toHaveAttribute("data-date", "2026-10-21");
+		await page.locator(".tnc-strip-title").click();
+		await page.locator('.tnc-strip-day[data-date="2026-10-29"]').click();
+		await expect(page.locator(".tnc-strip")).not.toHaveClass(/is-expanded/);
+		expect(await lastLog(page, "dateclick")).toBe("dateclick 2026-10-29");
+		const strip = (await page.locator(".tnc-strip").boundingBox())!;
+		const picked = (await page.locator('.tnc-list-section[data-date="2026-10-29"]').boundingBox())!;
+		expect(Math.abs(picked.y - (strip.y + strip.height))).toBeLessThan(4);
+		const before = await page.evaluate(() => window.tnc.calendar.getView().range.endDay);
+		await page.mouse.move(700, 600);
+		for (let i = 0; i < 4; i++) await page.mouse.wheel(0, 2500);
+		await expect.poll(() => page.evaluate(() => window.tnc.calendar.getView().range.endDay)).toBeGreaterThan(before);
+		await expect(page.locator(".tnc-strip-day.is-focus")).not.toHaveAttribute("data-date", "2026-10-29");
+	});
+
+	test("dragging a row onto a strip day moves it there at the same time", async ({ page }) => {
+		await open(page, "view=listWeek&agenda=1");
+		const from = await center(item(page, "due-1")); // Wed 21st 17:00
+		const day = await center(page.locator('.tnc-strip-day[data-date="2026-10-24"]'));
+		await drag(page, from, day);
+		await expect.poll(() => lastLog(page, "drop")).toBe("drop due-1 2026-10-24T17:00 → 2026-10-24T17:30");
+		await expect(page.locator(".tnc-strip-day.is-drop-target")).toHaveCount(0);
+	});
+});
+
+test("@touch agenda rows scroll the page at auto height", async ({ page }) => {
+	await open(page, "view=listWeek&agenda=1&height=auto");
+	await page.addStyleTag({ content: "#side{display:none} #app{height:auto}" });
+	const el = item(page, "due-1");
+	await el.scrollIntoViewIfNeeded();
+	const box = (await el.boundingBox())!;
+	const cdp = await page.context().newCDPSession(page);
+	const touch = (type: "touchStart" | "touchMove" | "touchEnd", x: number, y: number) =>
+		cdp.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" ? [] : [{ x, y }] });
+	const before = await page.evaluate(() => document.scrollingElement!.scrollTop);
+	await touch("touchStart", box.x + 40, box.y + 10);
+	for (let i = 1; i <= 6; i++) await touch("touchMove", box.x + 40, box.y + 10 - i * 25);
+	await touch("touchEnd", box.x + 40, box.y - 140);
+	await expect.poll(() => page.evaluate(() => document.scrollingElement!.scrollTop)).toBeGreaterThan(before + 60);
+	expect(await lastLog(page, "drop")).toBeUndefined();
+});
