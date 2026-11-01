@@ -207,6 +207,7 @@ export class DayGridView<D> implements View {
 		const n = w.days.length;
 		const hidden = new Array<NormalizedItem<D>[]>(n).fill([]).map(() => [] as NormalizedItem<D>[]);
 		w.pool.begin();
+		const previewLevels = new Array<number>(n).fill(0);
 		let maxLevel = -1;
 		for (const p of row.placements) {
 			let level = p.level;
@@ -214,11 +215,16 @@ export class DayGridView<D> implements View {
 			for (let c = p.startCol; c < p.endCol; c++) room = Math.min(room, visible(c));
 			if (level >= room) {
 				// The item being dragged always shows, in the last row that has room, so the preview never hides behind "+N more".
-				if (p.item.id !== ctx.draggingId) {
+				if (!p.item.item.preview && p.item.id !== ctx.draggingId) {
 					for (let c = p.startCol; c < p.endCol; c++) hidden[c]!.push(p.item);
 					continue;
 				}
-				level = Math.max(0, room - 1);
+				if (p.item.item.preview) {
+					// Stack group peers below the normal rows and the more link, never on top of each other.
+					level = 0;
+					for (let c = p.startCol; c < p.endCol; c++) level = Math.max(level, visible(c) + 1, previewLevels[c]!);
+					for (let c = p.startCol; c < p.endCol; c++) previewLevels[c] = level + 1;
+				} else level = Math.max(0, room - 1);
 			}
 			maxLevel = Math.max(maxLevel, level);
 			const single = !p.item.allDay && p.item.endDay - p.item.startDay <= 1;

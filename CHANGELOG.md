@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.5
+
+### Added
+
+- Host-managed `CalendarItem.preview` placements for group drags. They use mirror styling, are non-interactive and hidden from assistive navigation, and remain visible beyond month/all-day event limits and timed stack limits. Multiple overflow previews stack separately.
+  - Supports the TaskNotes batch-scheduling workflow requested by @mnicolas94 in [Discussion 2435](https://github.com/callumalpass/tasknotes/discussions/2435), with the existing limitations clarified by @Thanatos9404.
+
+### Fixed
+
+- The dragged anchor remains visible when moving into a timed cluster limited by `eventMaxStack`.
+
 ## 0.1.4
 
 ### Added

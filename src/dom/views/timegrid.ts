@@ -256,6 +256,7 @@ export class TimeGridView<D> implements View {
 		const pool = this.allDayPool;
 		pool.begin();
 		const hidden = new Array<number>(days.length).fill(0);
+		const previewLevels = new Array<number>(days.length).fill(0);
 		let maxLevel = -1;
 		for (const p of row.placements) {
 			let level = p.level;
@@ -263,11 +264,15 @@ export class TimeGridView<D> implements View {
 			for (let c = p.startCol; c < p.endCol; c++) room = Math.min(room, visibleLevels(c));
 			if (level >= room) {
 				// The item being dragged always shows, in the last row that has room, so the preview never hides behind "+N more".
-				if (p.item.id !== ctx.draggingId) {
+				if (!p.item.item.preview && p.item.id !== ctx.draggingId) {
 					for (let c = p.startCol; c < p.endCol; c++) hidden[c]!++;
 					continue;
 				}
-				level = Math.max(0, room - 1);
+				if (p.item.item.preview) {
+					level = 0;
+					for (let c = p.startCol; c < p.endCol; c++) level = Math.max(level, visibleLevels(c) + 1, previewLevels[c]!);
+					for (let c = p.startCol; c < p.endCol; c++) previewLevels[c] = level + 1;
+				} else level = Math.max(0, room - 1);
 			}
 			maxLevel = Math.max(maxLevel, level);
 			const el = pool.place(p.item.id, {
@@ -370,7 +375,8 @@ export class TimeGridView<D> implements View {
 		const hiddenByCluster = new Map<number, { count: number; start: number; end: number; items: TimedPlacement<D>[] }>();
 		pool.begin();
 		for (const p of placements) {
-			if (withMore && maxStack > 0 && p.cols > maxStack && p.col >= maxStack - 1) {
+			const preview = p.item.item.preview || p.item.id === ctx.draggingId;
+			if (!preview && withMore && maxStack > 0 && p.cols > maxStack && p.col >= maxStack - 1) {
 				const rec = hiddenByCluster.get(p.cluster) ?? { count: 0, start: p.startMin, end: p.endMin, items: [] };
 				rec.count++;
 				rec.start = Math.min(rec.start, p.startMin);
@@ -379,7 +385,7 @@ export class TimeGridView<D> implements View {
 				hiddenByCluster.set(p.cluster, rec);
 				continue;
 			}
-			const cols = withMore && maxStack > 0 ? Math.min(p.cols, maxStack) : p.cols;
+			const cols = !preview && withMore && maxStack > 0 ? Math.min(p.cols, maxStack) : p.cols;
 			const span = Math.min(p.span, cols - p.col);
 			const left = p.col / cols;
 			let width = span / cols;

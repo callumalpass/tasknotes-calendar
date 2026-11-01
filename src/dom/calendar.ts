@@ -498,7 +498,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	}
 
 	isEditable(n: NormalizedItem<D>, what: "start" | "duration"): boolean {
-		if (n.id === EXTERNAL_ID || this.opts.view === "year") return false;
+		if (n.id === EXTERNAL_ID || n.item.preview || this.opts.view === "year") return false;
 		// Agenda rows move between days; list rows have no length to resize.
 		if (this.opts.view === "list" && (!this.opts.listAgenda || what === "duration")) return false;
 		const it = n.item;
@@ -528,6 +528,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	createItemEl(meta: ElMeta<D>): HTMLElement {
 		const { n, variant } = meta;
 		const it = n.item;
+		const preview = meta.mirror || it.preview === true;
 		const el = h(this.doc, "div", "tnc-item");
 		el.classList.add(`tnc-item--${variant}`);
 		if (it.kind) el.classList.add(`tnc-k-${it.kind.replace(/[^\w-]/g, "-")}`);
@@ -537,12 +538,12 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		if (!meta.isStart) el.classList.add("is-cont-start");
 		if (!meta.isEnd) el.classList.add("is-cont-end");
 		if (n.allDay) el.classList.add("is-all-day");
-		if (meta.mirror || n.id === EXTERNAL_ID) el.classList.add("is-mirror");
+		if (preview || n.id === EXTERNAL_ID) el.classList.add("is-mirror");
 		if (this.conflicts.has(n.id)) el.classList.add("is-conflict");
 		const indicator = variant === "indicator";
-		if (!meta.mirror && !indicator && (this.isEditable(n, "start") || this.isEditable(n, "duration"))) el.classList.add("is-draggable");
+		if (!preview && !indicator && (this.isEditable(n, "start") || this.isEditable(n, "duration"))) el.classList.add("is-draggable");
 		if (this.draggingId === n.id) el.classList.add("is-dragging");
-		if (this.selectedIds.has(n.id) && !meta.mirror) el.classList.add("is-selected");
+		if (this.selectedIds.has(n.id) && !preview) el.classList.add("is-selected");
 		el.classList.add(...classList(it.className));
 		const arg = this.itemArg(el, meta);
 		el.classList.add(...classList(this.opts.itemClassNames?.(arg)));
@@ -553,7 +554,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		if (it.backgroundColor) el.style.setProperty("--tnc-bg", it.backgroundColor);
 		if (it.borderColor) el.style.setProperty("--tnc-border", it.borderColor);
 		if (it.textColor) el.style.setProperty("--tnc-fg", it.textColor);
-		if (indicator) el.setAttribute("aria-hidden", "true");
+		if (indicator || preview) el.setAttribute("aria-hidden", "true");
 		else if (it.display !== "background") {
 			el.tabIndex = 0;
 			el.setAttribute("role", "button");
@@ -572,7 +573,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		} else {
 			el.append(this.defaultContent(meta));
 		}
-		if (variant !== "list" && !indicator && it.display !== "background") this.addHandles(el, meta);
+		if (!preview && variant !== "list" && !indicator && it.display !== "background") this.addHandles(el, meta);
 		this.opts.itemDidMount?.(arg);
 		return el;
 	}
@@ -582,7 +583,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		if (time) this.fillTime(time, meta.n, meta.variant, meta.day);
 		el.classList.toggle("is-dragging", this.draggingId === meta.n.id);
 		el.classList.toggle("is-conflict", this.conflicts.has(meta.n.id));
-		el.classList.toggle("is-selected", this.selectedIds.has(meta.n.id) && !meta.mirror);
+		el.classList.toggle("is-selected", this.selectedIds.has(meta.n.id) && !meta.mirror && !meta.n.item.preview);
 	}
 
 	private selectedSet(): Set<string> {
@@ -594,7 +595,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		this.selectedIds = this.selectedSet();
 		for (const el of this.viewHost.querySelectorAll<HTMLElement>(".tnc-item")) {
 			const meta = this.meta.get(el);
-			if (meta) el.classList.toggle("is-selected", this.selectedIds.has(meta.n.id) && !meta.mirror);
+			if (meta) el.classList.toggle("is-selected", this.selectedIds.has(meta.n.id) && !meta.mirror && !meta.n.item.preview);
 		}
 	}
 
@@ -1034,7 +1035,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 			day: meta.day,
 			isStart: meta.isStart,
 			isEnd: meta.isEnd,
-			isMirror: meta.mirror,
+			isMirror: meta.mirror || meta.n.item.preview === true,
 			variant: meta.variant,
 			timeText: meta.n.allDay ? "" : end ? `${start} – ${end}` : start,
 		};
@@ -1197,7 +1198,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 
 	private itemElFrom(target: EventTarget | null): HTMLElement | null {
 		const el = (target as Element | null)?.closest?.<HTMLElement>(".tnc-item");
-		return el && this.root.contains(el) && this.meta.has(el) ? el : null;
+		return el && this.root.contains(el) && this.meta.has(el) && !this.meta.get(el)?.n.item.preview ? el : null;
 	}
 
 	private readonly onDocPointerDown = (ev: PointerEvent) => {

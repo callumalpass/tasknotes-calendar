@@ -30,6 +30,8 @@ export interface CalendarItem<D = unknown> {
 	borderColor?: string;
 	textColor?: string;
 	className?: string | string[];
+	/** Host-managed temporary placement: inert, mirror-styled and never hidden by event limits. */
+	preview?: boolean;
 	/** Overrides the calendar-wide `editable` option. */
 	editable?: boolean;
 	startEditable?: boolean;

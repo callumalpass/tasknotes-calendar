@@ -224,9 +224,10 @@
 	opacity: 0.92;
 }
 .tnc-item.is-mirror {
+	z-index: 40 !important;
 	opacity: 0.8;
 	border-style: dashed !important;
-	pointer-events: none;
+	pointer-events: none !important;
 }
 
 /* timed (time grid) */
