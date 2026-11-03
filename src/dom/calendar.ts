@@ -17,7 +17,7 @@ import { ItemStore, type StoreChange } from "../core/store";
 import type { CalendarItem, DateInput, DateRange, NormalizedItem } from "../core/types";
 import { dayOf, formatFloating, getTimeZone, parseDateInput, type TimeZone, toInstant, wallTime } from "../core/zone";
 import { type ElMeta, ItemPool, type Selection, type View, type ViewContext } from "./context";
-import { classList, h, setStyle } from "./dom";
+import { classList, h, setAttrs, setStyle } from "./dom";
 import { Formatter, localeFirstDay } from "./format";
 import {
 	type CalendarOptions,
@@ -44,6 +44,7 @@ import { TimelineView } from "./views/timeline";
 import { YearView } from "./views/year";
 
 const EXTERNAL_ID = "__tnc_external__";
+const SVG_NS = "http://www.w3.org/2000/svg";
 /** How far an agenda list grows before picking a later day moves its start. */
 const MAX_AGENDA_DAYS = 366;
 
@@ -952,14 +953,27 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 			if (e.icon) b.replaceChildren(e.icon());
 			return b;
 		});
+		// Drawn chevrons: the ‹ › glyphs render tiny in many UI fonts.
+		const chevron = (d: string) => {
+			const svg = this.doc.createElementNS(SVG_NS, "svg");
+			setAttrs(svg, { viewBox: "0 0 24 24", "aria-hidden": "true", focusable: "false" });
+			const path = this.doc.createElementNS(SVG_NS, "path");
+			path.setAttribute("d", d);
+			svg.append(path);
+			return svg;
+		};
+		const prev = btn("", this.text.prev, "tnc-btn-prev", () => this.prev());
+		prev.append(chevron("m15 18-6-6 6-6"));
+		const next = btn("", this.text.next, "tnc-btn-next", () => this.next());
+		next.append(chevron("m9 18 6-6-6-6"));
 		const nav = h(
 			this.doc,
 			"div",
 			"tnc-toolbar-group tnc-toolbar-nav",
 			null,
-			btn("‹", this.text.prev, "tnc-btn-prev", () => this.prev()),
+			prev,
 			btn(this.text.today, this.text.today, "tnc-btn-today", () => this.goToday()),
-			btn("›", this.text.next, "tnc-btn-next", () => this.next()),
+			next,
 		);
 		const title = h(this.doc, "h2", "tnc-title", { "aria-live": "polite" }, this.view.title);
 		const viewGroup = h(this.doc, "div", "tnc-toolbar-group tnc-toolbar-views", { role: "group" });

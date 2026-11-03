@@ -24,6 +24,21 @@ interface Column<D> {
 
 const BAR_GAP = 2;
 
+/**
+ * Horizontal position within a day column. Plan and actual items share the
+ * column; only items whose cluster overlaps the other lane keep to their side,
+ * with actual items in a narrow strip on the right.
+ */
+function inLane(lane: "plan" | "actual", split: boolean, left: number, width: number): { left: string; width: string } {
+	const [x, w] = !split
+		? ["1px", "100% - 9px"]
+		: lane === "plan"
+			? ["1px", "100% - var(--tnc-actual-w) - 5px"]
+			: ["100% - var(--tnc-actual-w) - 2px", "var(--tnc-actual-w)"];
+	const f = (n: number) => Math.round(n * 10000) / 10000;
+	return { left: `calc(${x} + (${w}) * ${f(left)})`, width: `calc((${w}) * ${f(width)} - 1px)` };
+}
+
 /** Week, day and N-day views: an all-day row over a scrolling time grid. */
 export class TimeGridView<D> implements View {
 	readonly el: HTMLElement;
@@ -357,8 +372,8 @@ export class TimeGridView<D> implements View {
 
 		const hasActual = layout.actual.length > 0;
 		c.col.classList.toggle("has-actual", hasActual);
-		this.placeLane(c.plan, layout.plan, c, top, height, true);
-		this.placeLane(c.actual, layout.actual, c, top, height, false);
+		this.placeLane(c.plan, layout.plan, c, top, height, "plan");
+		this.placeLane(c.actual, layout.actual, c, top, height, "actual");
 	}
 
 	private placeLane(
@@ -367,17 +382,18 @@ export class TimeGridView<D> implements View {
 		c: Column<D>,
 		top: (m: number) => string,
 		height: (s: TimedSegment<D>) => string,
-		withMore: boolean,
+		lane: "plan" | "actual",
 	): void {
 		const { ctx } = this;
 		const { opts } = ctx;
+		const withMore = lane === "plan";
 		const maxStack = opts.eventMaxStack;
-		const hiddenByCluster = new Map<number, { count: number; start: number; end: number; items: TimedPlacement<D>[] }>();
+		const hiddenByCluster = new Map<number, { count: number; start: number; end: number; split: boolean; items: TimedPlacement<D>[] }>();
 		pool.begin();
 		for (const p of placements) {
 			const preview = p.item.item.preview || p.item.id === ctx.draggingId;
 			if (!preview && withMore && maxStack > 0 && p.cols > maxStack && p.col >= maxStack - 1) {
-				const rec = hiddenByCluster.get(p.cluster) ?? { count: 0, start: p.startMin, end: p.endMin, items: [] };
+				const rec = hiddenByCluster.get(p.cluster) ?? { count: 0, start: p.startMin, end: p.endMin, split: p.split, items: [] };
 				rec.count++;
 				rec.start = Math.min(rec.start, p.startMin);
 				rec.end = Math.max(rec.end, p.endMin);
@@ -396,8 +412,7 @@ export class TimeGridView<D> implements View {
 			setStyle(el, {
 				top: top(p.startMin),
 				height: `max(${height(p)}, ${opts.eventMinHeight}px)`,
-				left: pct(left),
-				width: `calc(${pct(width)} - 1px)`,
+				...inLane(lane, p.split, left, width),
 				"z-index": String(p.col + 1),
 			});
 		}
@@ -409,8 +424,7 @@ export class TimeGridView<D> implements View {
 			const cols = maxStack;
 			setStyle(link, {
 				top: top(rec.start),
-				left: pct((cols - 1) / cols),
-				width: `calc(${pct(1 / cols)} - 1px)`,
+				...inLane(lane, rec.split, (cols - 1) / cols, 1 / cols),
 			});
 			link.addEventListener("click", (ev) => ctx.openMore(c.day, link, ev));
 			c.more.append(link);

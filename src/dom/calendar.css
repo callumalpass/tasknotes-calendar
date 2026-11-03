@@ -23,6 +23,8 @@
 	--tnc-off: color-mix(in srgb, var(--tnc-text) 3.5%, transparent);
 	--tnc-shadow: 0 8px 24px rgb(0 0 0 / 0.16);
 	--tnc-radius: 6px;
+	/* Time-grid share for tracked ("actual") items where they overlap planned ones. */
+	--tnc-actual-w: 22%;
 	--tnc-font-size: 12px;
 	--tnc-small: 11px;
 	--tnc-bar-h: 20px;
@@ -131,9 +133,21 @@
 }
 .tnc-btn-prev,
 .tnc-btn-next {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
 	min-width: 28px;
 	padding: 3px 6px;
-	font-size: 15px;
+}
+.tnc-btn-prev svg,
+.tnc-btn-next svg {
+	width: 16px;
+	height: 16px;
+	fill: none;
+	stroke: currentColor;
+	stroke-width: 2;
+	stroke-linecap: round;
+	stroke-linejoin: round;
 }
 .tnc-btn:focus-visible,
 .tnc-navlink:focus-visible,
@@ -612,31 +626,19 @@
 .tnc-col.is-today {
 	background-color: color-mix(in srgb, var(--tnc-accent) 5%, transparent);
 }
+/* Items position themselves within the column; see inLane in timegrid.ts. */
 .tnc-col-plan,
 .tnc-col-bg,
 .tnc-col-actual {
 	position: absolute;
-	top: 0;
-	bottom: 0;
+	inset: 0;
 }
-.tnc-col-bg {
-	left: 0;
-	right: 0;
-}
-.tnc-col-plan {
-	left: 1px;
-	right: 8px;
-}
+/* Above the plan layer, so it must not swallow clicks meant for plan items. */
 .tnc-col-actual {
-	display: none;
-	right: 2px;
-	width: 22%;
+	pointer-events: none;
 }
-.tnc-col.has-actual .tnc-col-plan {
-	right: calc(22% + 4px);
-}
-.tnc-col.has-actual .tnc-col-actual {
-	display: block;
+.tnc-col-actual > * {
+	pointer-events: auto;
 }
 .tnc-now {
 	position: absolute;

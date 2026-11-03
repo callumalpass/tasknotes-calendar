@@ -23,6 +23,11 @@ export interface TimedPlacement<D = unknown> extends TimedSegment<D> {
 	span: number;
 	/** Index of the overlap cluster within the day. */
 	cluster: number;
+	/**
+	 * Whether the cluster overlaps an item in the other lane (plan vs actual).
+	 * Only then does the item keep to its lane's share of the column.
+	 */
+	split: boolean;
 }
 
 export interface TimedDayLayout<D = unknown> {
@@ -118,7 +123,7 @@ export function packTimed<D>(segs: TimedSegment<D>[], minMinutes: number, order:
 			colEnds.push(0);
 		}
 		colEnds[col] = s.end;
-		const p = { ...s, col, cols: 1, span: 1, cluster: clusterIndex };
+		const p = { ...s, col, cols: 1, span: 1, cluster: clusterIndex, split: false };
 		cluster.push(p);
 		out.push(p);
 		clusterEnd = Math.max(clusterEnd, s.end);
@@ -146,7 +151,26 @@ export function layoutTimedDay<D>(
 		else if (n.item.lane === "actual") actual.push(seg);
 		else plan.push(seg);
 	}
-	return { day, plan: packTimed(plan, minMinutes, order), actual: packTimed(actual, minMinutes, order), background };
+	const planPlaced = packTimed(plan, minMinutes, order);
+	const actualPlaced = packTimed(actual, minMinutes, order);
+	markSplit(planPlaced, actualPlaced, minMinutes);
+	markSplit(actualPlaced, planPlaced, minMinutes);
+	return { day, plan: planPlaced, actual: actualPlaced, background };
+}
+
+/** Marks clusters of `lane` that overlap any item of `other`, at displayed (min) heights. */
+function markSplit<D>(lane: TimedPlacement<D>[], other: TimedPlacement<D>[], minMinutes: number): void {
+	if (!lane.length || !other.length) return;
+	const end = (p: TimedPlacement<D>) => Math.max(p.endMin, p.startMin + minMinutes);
+	const ranges = new Map<number, [number, number]>();
+	for (const p of lane) {
+		const r = ranges.get(p.cluster);
+		if (r) r[1] = Math.max(r[1], end(p));
+		else ranges.set(p.cluster, [p.startMin, end(p)]);
+	}
+	const split = new Set<number>();
+	for (const [cluster, [s, e]] of ranges) if (other.some((o) => o.startMin < e && s < end(o))) split.add(cluster);
+	for (const p of lane) p.split = split.has(p.cluster);
 }
 
 /* ----------------------------------------------------------------- day rows */
