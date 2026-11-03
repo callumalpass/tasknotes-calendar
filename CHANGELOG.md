@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Time grids give tracked (`lane: "actual"`) items their narrow strip only where they overlap planned items. Elsewhere, planned and tracked items use the full column width, as before the side lane existed. The strip's width is the `--tnc-actual-w` custom property (default 22%).
+  - Reported by @RumiaKitinari in [TaskNotes issue 2494](https://github.com/callumalpass/tasknotes/issues/2494) and @mgreen3 in [TaskNotes issue 2498](https://github.com/callumalpass/tasknotes/issues/2498).
+- The toolbar's previous and next buttons draw their chevrons as icons, which are larger and clearer than the ‹ › glyphs.
+
 ## 0.1.5
 
 ### Added

@@ -81,6 +81,32 @@ describe("time grid packing", () => {
 		expect(packTimed(segs, 5).every((p) => p.cols === 1)).toBe(true);
 		expect(packTimed(segs, 30).every((p) => p.cols === 2)).toBe(true);
 	});
+	it("splits plan and actual lanes only where they overlap", () => {
+		const s = new ItemStore(zone);
+		s.setAll([
+			{ id: "meeting", title: "Meeting", start: "2026-10-20T09:00", end: "2026-10-20T10:00" },
+			{ id: "tracked", title: "Tracked", start: "2026-10-20T09:30", end: "2026-10-20T10:30", lane: "actual" },
+			{ id: "chained", title: "Chained", start: "2026-10-20T10:15", end: "2026-10-20T11:00", lane: "actual" },
+			{ id: "lunch", title: "Lunch", start: "2026-10-20T12:00", end: "2026-10-20T13:00" },
+			{ id: "late", title: "Late", start: "2026-10-20T14:00", end: "2026-10-20T14:30", lane: "actual" },
+			// Touches the end of Lunch without overlapping it.
+			{ id: "after", title: "After", start: "2026-10-20T13:00", end: "2026-10-20T13:30", lane: "actual" },
+		]);
+		const L = layoutTimedDay(s.timedOn(D), D, zone, 15);
+		const split = Object.fromEntries([...L.plan, ...L.actual].map((p) => [p.item.id, p.split]));
+		// "chained" shares a cluster with "tracked", so the cluster keeps one width.
+		expect(split).toEqual({ meeting: true, tracked: true, chained: true, lunch: false, after: false, late: false });
+	});
+	it("uses displayed heights when deciding whether lanes overlap", () => {
+		const s = new ItemStore(zone);
+		s.setAll([
+			{ id: "plan", title: "Plan", start: "2026-10-20T09:00", end: "2026-10-20T09:05" },
+			{ id: "actual", title: "Actual", start: "2026-10-20T09:10", end: "2026-10-20T09:20", lane: "actual" },
+		]);
+		const splitAt = (min: number) => layoutTimedDay(s.timedOn(D), D, zone, min).plan[0]!.split;
+		expect(splitAt(5)).toBe(false);
+		expect(splitAt(30)).toBe(true);
+	});
 });
 
 describe("row layout", () => {
