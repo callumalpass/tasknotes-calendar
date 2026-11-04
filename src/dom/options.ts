@@ -275,6 +275,7 @@ export interface ToolbarButton {
 export interface ToolbarOptions {
 	/** View buttons, in order. */
 	views?: ViewType[];
+	viewDisplay?: "auto" | "buttons" | "select";
 	extraButtons?: ToolbarButton[];
 	/** Extra buttons go before prev/next ("start") or after the view buttons ("end"). */
 	extraPlacement?: "start" | "end";
@@ -334,6 +335,7 @@ export interface CalendarOptions<D = unknown> {
 	listLeadWillUnmount?: (arg: { el: HTMLElement }) => void;
 	/** Agenda lists: an add row with this label under every day, reported through `onListAdd`. Null for none. */
 	listAddText: string | null;
+	listEmptyContent?: () => Node;
 	onListAdd?: (arg: DayArg & { jsEvent: MouseEvent | KeyboardEvent }) => void;
 	/**
 	 * Month cells: "full" draws bars and titled entries; "dots" draws every
@@ -522,6 +524,7 @@ export const LAYOUT_KEYS = new Set<keyof CalendarOptions>([
 	"dateStrip",
 	"listLeadTitle",
 	"listAddText",
+	"listEmptyContent",
 	"monthDisplay",
 	"timeZone",
 	"locale",

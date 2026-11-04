@@ -190,7 +190,10 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		this.resizeObs?.disconnect();
 		const RO = (this.win as Window & { ResizeObserver?: typeof ResizeObserver }).ResizeObserver;
 		if (RO) {
-			this.resizeObs = new RO(() => this.current?.resize?.());
+			this.resizeObs = new RO(() => {
+				this.syncToolbarViewDisplay();
+				this.current?.resize?.();
+			});
 			this.resizeObs.observe(this.root);
 		}
 	}
@@ -977,17 +980,43 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		);
 		const title = h(this.doc, "h2", "tnc-title", { "aria-live": "polite" }, this.view.title);
 		const viewGroup = h(this.doc, "div", "tnc-toolbar-group tnc-toolbar-views", { role: "group" });
+		const viewSelect = h(this.doc, "select", "tnc-btn tnc-toolbar-view-select", {
+			"aria-label": this.text.viewHints[this.opts.view] ?? this.text.views[this.opts.view] ?? this.opts.view,
+		});
 		for (const v of views) {
 			const label = v === "days" ? (this.text.views.days ?? `${this.opts.dayCount} days`) : (this.text.views[v] ?? v);
 			viewGroup.append(btn(label, this.text.viewHints[v] ?? label, `tnc-btn-view tnc-btn-view-${v}`, () => this.changeView(v), v === this.opts.view));
+			viewSelect.append(h(this.doc, "option", "", { value: v }, label));
 		}
+		viewSelect.value = this.opts.view;
+		viewSelect.addEventListener("change", () => this.changeView(viewSelect.value as ViewType));
 		const start = h(this.doc, "div", "tnc-toolbar-start");
 		const end = h(this.doc, "div", "tnc-toolbar-end");
 		if (cfg.extraPlacement === "start") start.append(...extras);
 		start.append(nav, title);
-		end.append(viewGroup);
+		end.append(viewGroup, viewSelect);
 		if (cfg.extraPlacement !== "start") end.append(...extras);
 		this.toolbarEl.append(start, end);
+		this.syncToolbarViewDisplay();
+	}
+
+	private syncToolbarViewDisplay(): void {
+		const buttons = this.toolbarEl.querySelector<HTMLElement>(".tnc-toolbar-views");
+		const select = this.toolbarEl.querySelector<HTMLElement>(".tnc-toolbar-view-select");
+		const start = this.toolbarEl.querySelector<HTMLElement>(".tnc-toolbar-start");
+		if (!buttons || !select || !start) return;
+		const config = this.opts.toolbar;
+		const mode = typeof config === "object" ? config.viewDisplay ?? "auto" : "auto";
+		buttons.hidden = false;
+		select.hidden = true;
+		buttons.style.display = "flex";
+		select.style.display = "none";
+		const startWidth = Array.from(start.children).reduce((width, child) => width + child.scrollWidth, 0);
+		const compact = mode === "select" || (mode === "auto" && startWidth + buttons.scrollWidth + 32 > this.root.clientWidth);
+		buttons.hidden = compact;
+		select.hidden = !compact;
+		buttons.style.display = compact ? "none" : "flex";
+		select.style.display = compact ? "" : "none";
 	}
 
 	private applyChange(change: StoreChange): void {

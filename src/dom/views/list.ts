@@ -131,6 +131,8 @@ export class ListView<D> implements View {
 		if (!keep.size && !leadItems.length) {
 			if (!empty) {
 				empty = h(doc, "div", "tnc-list-empty", { role: "listitem" }, ctx.text.noItems);
+				const content = ctx.opts.listEmptyContent?.();
+				if (content) empty.replaceChildren(content);
 				this.body.append(empty);
 			}
 		} else empty?.remove();
