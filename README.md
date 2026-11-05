@@ -126,6 +126,11 @@ The grid scrolls horizontally when these minimum widths exceed the viewport;
 headers, all-day rows and timed columns remain aligned. The count is recomputed
 after incremental additions, updates and removals, so widths can shrink again.
 
+Timed events also expose `--tnc-event-readable-width`, the percentage of their
+width not covered by the next collision column. Hosts can use it as the
+`max-width` of `.tnc-item-main` to keep text readable while preserving the user's
+overlapping event backgrounds. It is `100%` for non-overlapping placements.
+
 ```css
 .my-calendar {
   --tnc-theme-bg: #181818;

@@ -419,6 +419,7 @@ export class TimeGridView<D> implements View {
 				top: top(p.startMin),
 				height: `max(${height(p)}, ${opts.eventMinHeight}px)`,
 				...inLane(lane, p.split, left, width),
+				"--tnc-event-readable-width": pct(span / cols / width),
 				"z-index": String(p.col + 1),
 			});
 		}

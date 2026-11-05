@@ -15,6 +15,14 @@ test("hosts can reserve readable collision columns and widths shrink after incre
 	await expect.poll(() => grid.evaluate((element) => element.style.getPropertyValue("--tnc-collision-columns"))).toBe("4");
 	expect(await grid.locator(".tnc-tg-scroll").evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
 	for (const event of await grid.locator(".tnc-item--timed").all()) expect((await event.boundingBox())!.width).toBeGreaterThan(110);
+	await page.addStyleTag({ content: ".tnc-item--timed .tnc-item-main { max-width: var(--tnc-event-readable-width, 100%); }" });
+	await page.evaluate(() => window.tnc.calendar.setOptions({ slotEventOverlap: true }));
+	const overlapping = grid.locator(".tnc-item--timed");
+	for (let index = 0; index < 3; index++) {
+		const content = await overlapping.nth(index).locator(".tnc-item-main").boundingBox();
+		const next = await overlapping.nth(index + 1).boundingBox();
+		expect(content!.x + content!.width).toBeLessThanOrEqual(next!.x);
+	}
 	await page.evaluate(() => window.tnc.setItems(window.tnc.items().slice(0, 1)));
 	await expect.poll(() => grid.evaluate((element) => element.style.getPropertyValue("--tnc-collision-columns"))).toBe("1");
 	await page.evaluate(() => {
