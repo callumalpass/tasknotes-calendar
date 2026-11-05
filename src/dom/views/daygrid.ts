@@ -256,7 +256,10 @@ export class DayGridView<D> implements View {
 				w.more.append(link);
 			}
 			existing.delete(key);
-			link.textContent = ctx.text.more(items.length);
+			link.setAttribute("aria-label", ctx.text.more(items.length));
+			link.textContent = w.row.clientWidth / n < 72
+				? `+${new Intl.NumberFormat(ctx.opts.locale).format(items.length)}`
+				: ctx.text.more(items.length);
 			setStyle(link, {
 				left: `calc(${pct(col / n)} + 2px)`,
 				width: `calc(${pct(1 / n)} - 4px)`,

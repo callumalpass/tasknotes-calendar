@@ -142,6 +142,18 @@ test.describe("other views", () => {
 		await expect.poll(() => lastLog(page, "drop")).toBe("drop span-1 2026-10-20 → 2026-10-23 (all-day)");
 	});
 
+	test("month: narrow overflow counts fit their cell and retain the full accessible name", async ({ page }) => {
+		await page.setViewportSize({ width: 400, height: 800 });
+		await open(page, "view=dayGridMonth");
+		await page.addStyleTag({ content: "#side{display:none}" });
+		const more = page.locator(".tnc-more").first();
+		await expect(more).toHaveText(/^\+\d+$/);
+		await expect(more).toHaveAccessibleName(/^\+\d+ more$/);
+		expect(await more.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+		await more.click();
+		await expect(page.locator(".tnc-popover")).toBeVisible();
+	});
+
 	test("month: rows make room for a tall '+N more' link", async ({ page }) => {
 		await open(page, "view=dayGridMonth");
 		await page.addStyleTag({ content: ".tnc { --tnc-more-h: 44px; }" });
