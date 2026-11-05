@@ -2,12 +2,19 @@
 
 ## Unreleased
 
+## 0.1.7
+
+### Added
+
+- Hosts can read collision column counts and the unobscured timed content width, choose views responsively, fill an empty list through a content hook, and translate the stack label with the `appointments` text.
+
 ### Fixed
 
 - Collision stacks show appointment counts and open only the matching collision group, without unrelated all-day or timed items. Narrow time grids reveal the selected day on entry and view changes, not only after Today.
 - Crowded time-grid days use readable collision stacks without widening the entire week; stack contents retain drag-and-drop, including after moving the calendar into another window.
 - Today reveals the current day horizontally, with persistent day navigation when the grid is wider than its pane.
 - Overflow dialogs clamp to the visible viewport, reposition on resize and scroll, keep Close reachable, and provide touch-sized rows and keyboard navigation.
+- Collision stacks honour `eventMaxStack`, and overflow triggers stay stable across rerenders, so Escape returns focus to them.
 
 ## 0.1.6
 
