@@ -1821,6 +1821,16 @@
 	filter: none;
 	box-shadow: none;
 }
+.tnc .tnc-item--list.is-dragging:not(.tnc-drag-preview) {
+	opacity: var(--tnc-drag-opacity);
+	box-shadow: none;
+}
+.tnc .tnc-item.tnc-drag-preview {
+	position: fixed;
+	z-index: var(--tnc-theme-drag-z, 1000);
+	pointer-events: none;
+	background: var(--tnc-surface);
+}
 .tnc .tnc-item.is-write-pending {
 	opacity: 0.65;
 	cursor: progress;

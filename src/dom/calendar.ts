@@ -132,6 +132,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	slot = { min: 0, max: MINUTES_PER_DAY, duration: 30, snap: 30, scroll: 480 };
 	draggingId: string | null = null;
 	private dragOriginGhost: HTMLElement | null = null;
+	private listDragPreview: { element: HTMLElement; offsetX: number; offsetY: number; width: number; height: number } | null = null;
 	private dragScrollFrame: number | null = null;
 	private readonly dragScrollOrigins = new Map<Element, { top: number; left: number }>();
 	private readonly itemWriteStates = new Map<string, "pending" | "failed" | "changed">();
@@ -1369,7 +1370,18 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		if (s.origin) {
 			this.draggingId = s.origin.id;
 			for (const el of this.elementsFor(s.origin.id)) {
-				if (!this.dragOriginGhost && s.mode === "move") {
+				if (this.opts.view === "list" && !this.listDragPreview && s.mode === "move") {
+					const bounds = el.getBoundingClientRect();
+					const preview = el.cloneNode(true) as HTMLElement;
+					preview.classList.add("tnc-drag-preview", "is-dragging");
+					preview.removeAttribute("data-id");
+					preview.removeAttribute("data-task-path");
+					preview.setAttribute("aria-hidden", "true");
+					preview.inert = true;
+					preview.style.width = `${bounds.width}px`;
+					this.root.append(preview);
+					this.listDragPreview = { element: preview, offsetX: s.x0 - bounds.left, offsetY: s.y0 - bounds.top, width: bounds.width, height: bounds.height };
+				} else if (this.opts.view !== "list" && !this.dragOriginGhost && s.mode === "move") {
 					const ghost = el.cloneNode(true) as HTMLElement;
 					ghost.classList.add("tnc-drag-origin");
 					ghost.removeAttribute("data-id");
@@ -1486,6 +1498,11 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 
 	/** Proposal for the current pointer position. */
 	private track(s: Session<D>, ev: PointerEvent): void {
+		if (this.listDragPreview) {
+			const preview = this.listDragPreview;
+			preview.element.style.left = `${Math.max(8, Math.min(this.win.innerWidth - preview.width - 8, ev.clientX - preview.offsetX))}px`;
+			preview.element.style.top = `${Math.max(8, Math.min(this.win.innerHeight - preview.height - 8, ev.clientY - preview.offsetY))}px`;
+		}
 		const hit = this.hitAt(ev.clientX, ev.clientY);
 		if (s.mode === "external") {
 			this.trackExternal(s, hit);
@@ -1509,7 +1526,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		if (!allowed || sameProposal(p, s.proposal)) return;
 		s.proposal = p;
 		this.dragRow = p.rowId !== undefined ? { id: origin.id, rowId: p.rowId } : null;
-		this.applyChange(this.store.upsert([this.withProposal(origin, p)]));
+		if (this.opts.view !== "list") this.applyChange(this.store.upsert([this.withProposal(origin, p)]));
 	}
 
 	private trackExternal(s: Session<D>, raw: Hit | null): void {
@@ -1771,6 +1788,8 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		this.session = null;
 		this.dragOriginGhost?.remove();
 		this.dragOriginGhost = null;
+		this.listDragPreview?.element.remove();
+		this.listDragPreview = null;
 		if (s.timer !== null) this.win.clearTimeout(s.timer);
 		this.listenDoc(false);
 		this.root.classList.remove(
@@ -1840,6 +1859,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 			revert();
 			return;
 		}
+		if (this.opts.view === "list") this.applyChange(this.store.upsert([this.withProposal(origin, p)]));
 		this.flush();
 		this.commit(s.mode === "move" ? "drop" : "resize", origin, p, ev, revert);
 	}

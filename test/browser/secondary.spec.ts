@@ -37,6 +37,33 @@ test("drag origin stays in place and Escape restores the event exactly", async (
 	expect(await event.boundingBox()).toEqual(before);
 });
 
+test("agenda drag preview follows the pointer without changing row geometry", async ({ page }) => {
+	await open(page, "view=listWeek&agenda=1&date=2026-10-21");
+	await page.evaluate(() => window.tnc.setItems([
+		{ id: "list-origin", title: "Agenda source", start: "2026-10-21T10:00", end: "2026-10-21T11:00" },
+		{ id: "list-peer", title: "Stable neighbour", start: "2026-10-21T11:00", end: "2026-10-21T12:00" },
+	]));
+	const origin = page.locator('.tnc-item[data-id="list-origin"]');
+	const peer = page.locator('.tnc-item[data-id="list-peer"]');
+	const before = await origin.boundingBox();
+	const peerBefore = await peer.boundingBox();
+	const pointer = await center(origin);
+	await page.mouse.move(pointer.x, pointer.y);
+	await page.mouse.down();
+	await page.mouse.move(pointer.x + 30, pointer.y + 40, { steps: 8 });
+	const preview = page.locator(".tnc-drag-preview");
+	await expect(preview).toBeVisible();
+	await expect(preview).toHaveAttribute("aria-hidden", "true");
+	expect(await origin.boundingBox()).toEqual(before);
+	expect(await peer.boundingBox()).toEqual(peerBefore);
+	expect((await preview.boundingBox())!.y).toBeGreaterThan(before!.y);
+	await page.keyboard.press("Escape");
+	await page.mouse.up();
+	await expect(preview).toHaveCount(0);
+	expect(await origin.boundingBox()).toEqual(before);
+	expect(await peer.boundingBox()).toEqual(peerBefore);
+});
+
 test("invalid targets and scroll-edge drags cancel without stale state", async ({ page }) => {
 	await open(page, "view=timeGridDay&date=2026-10-21");
 	await page.evaluate(() => window.tnc.calendar.setOptions({ slotHeight: 48 }));
