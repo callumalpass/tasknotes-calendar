@@ -112,6 +112,20 @@ and changes views through the same navigation lifecycle as the buttons.
 Set `--tnc-theme-*` variables on the host (they inherit into the calendar)
 or on `.tnc`. The stylesheet is scoped to `.tnc` and does not inject CSS.
 
+Time grids expose `--tnc-collision-columns`, the largest visible timed-event
+column count in the current range (respecting `eventMaxStack`). Hosts can opt in
+to readable collision widths without changing the default layout:
+
+```css
+.my-calendar .tnc-tg {
+  --tnc-col-min: max(180px, calc(var(--tnc-collision-columns, 1) * 120px));
+}
+```
+
+The grid scrolls horizontally when these minimum widths exceed the viewport;
+headers, all-day rows and timed columns remain aligned. The count is recomputed
+after incremental additions, updates and removals, so widths can shrink again.
+
 ```css
 .my-calendar {
   --tnc-theme-bg: #181818;

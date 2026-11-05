@@ -20,6 +20,7 @@ interface Column<D> {
 	sel: HTMLElement;
 	now: HTMLElement | null;
 	cap: HTMLElement | null;
+	collisionColumns: number;
 }
 
 const BAR_GAP = 2;
@@ -164,6 +165,7 @@ export class TimeGridView<D> implements View {
 			this.body?.append(col);
 			return {
 				day,
+				collisionColumns: 1,
 				head,
 				col,
 				plan: new ItemPool(ctx, planLayer),
@@ -231,6 +233,7 @@ export class TimeGridView<D> implements View {
 			if (dirty && !dirty.has(c.day) && !(this.ctx.slot.max > MINUTES_PER_DAY && dirty.has(c.day + 1))) continue;
 			this.renderColumn(c);
 		}
+		this.el.style.setProperty("--tnc-collision-columns", String(Math.max(1, ...this.cols.map((column) => column.collisionColumns))));
 		this.renderCapacity();
 		this.tick();
 	}
@@ -359,6 +362,9 @@ export class TimeGridView<D> implements View {
 		}
 		const minMinutes = opts.eventMinHeight / this.ppm;
 		const layout = layoutTimedDay(items, c.day, zone, minMinutes, ctx.order, [slot.min, slot.max]);
+		c.collisionColumns = Math.max(1, ...layout.plan.map((placement) =>
+			opts.eventMaxStack > 0 ? Math.min(placement.cols, opts.eventMaxStack) : placement.cols),
+			...layout.actual.filter((placement) => !placement.split).map((placement) => placement.cols));
 		const total = this.minutes;
 		const top = (m: number) => pct((m - slot.min) / total);
 		const height = (s: TimedSegment<D>) => pct((s.endMin - s.startMin) / total);
