@@ -150,6 +150,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	private session: Session<D> | null = null;
 	private selection: Selection | null = null;
 	private suppressClick = false;
+	private cancelledPointerId: number | null = null;
 	private selectedIds = new Set<string>();
 	private popover: { el: HTMLElement; pool: ItemPool<D>; anchor: HTMLElement; day: Day } | null = null;
 	private timer: number | null = null;
@@ -1295,6 +1296,10 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	}
 
 	private readonly onDocPointerDown = (ev: PointerEvent) => {
+		if (this.cancelledPointerId !== null) {
+			this.cancelledPointerId = null;
+			this.listenDoc(false);
+		}
 		const t = ev.target as Node;
 		if (this.popover && !this.popover.el.contains(t) && !this.popover.anchor.contains(t)) this.closeMore();
 		if (this.selection && !this.root.contains(t)) this.unselect();
@@ -1468,6 +1473,12 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	};
 
 	private readonly onPointerUp = (ev: PointerEvent) => {
+		if (ev.pointerId === this.cancelledPointerId) {
+			this.cancelledPointerId = null;
+			this.suppressNextClick();
+			this.listenDoc(false);
+			return;
+		}
 		const s = this.session;
 		if (!s || ev.pointerId !== s.pointerId) return;
 		if (!s.active) {
@@ -1485,6 +1496,10 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	};
 
 	private readonly onPointerCancel = (ev: PointerEvent) => {
+		if (ev.pointerId === this.cancelledPointerId) {
+			this.cancelledPointerId = null;
+			this.listenDoc(false);
+		}
 		if (this.session && ev.pointerId === this.session.pointerId) this.endSession(null, true);
 	};
 
@@ -1492,7 +1507,12 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		if (ev.key === "Escape" && this.session) {
 			ev.preventDefault();
 			ev.stopPropagation();
+			const pointerId = this.session.active ? this.session.pointerId : null;
 			this.endSession(null, true);
+			if (pointerId !== null) {
+				this.cancelledPointerId = pointerId;
+				this.listenDoc(true);
+			}
 		}
 	};
 
