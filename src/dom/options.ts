@@ -288,6 +288,7 @@ export interface CalendarText {
 	allDay: string;
 	noItems: string;
 	more: (n: number) => string;
+	appointments: (n: number) => string;
 	/** Day-cell label suffix in `monthDisplay: "dots"`. */
 	itemCount: (n: number) => string;
 	weekNumber: (n: number) => string;
@@ -452,6 +453,7 @@ export const DEFAULT_TEXT: CalendarText = {
 	allDay: "All day",
 	noItems: "Nothing scheduled",
 	more: (n) => `+${n} more`,
+	appointments: (n) => `${n} appointments`,
 	itemCount: (n) => (n === 1 ? "1 item" : `${n} items`),
 	weekNumber: (n) => `W${n}`,
 	views: { week: "Week", day: "Day", days: "Days", month: "Month", list: "List", year: "Year", timeline: "Timeline" },

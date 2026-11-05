@@ -617,10 +617,12 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		el.remove();
 	}
 
-	openMore(day: Day, anchor: HTMLElement, jsEvent: MouseEvent | KeyboardEvent): void {
+	openMore(day: Day, anchor: HTMLElement, jsEvent: MouseEvent | KeyboardEvent, itemIds?: readonly string[]): void {
 		jsEvent.stopPropagation();
+		const group = itemIds ? new Set(itemIds) : null;
 		const items = this.store
 			.inRange(day, day + 1)
+			.filter((item) => !group || group.has(item.id))
 			.filter((n) => n.item.display !== "background" && (n.allDay || anchor.classList.contains("tnc-more--stack") || this.opts.view === "month" || !this.opts.timeGrid || this.opts.eventMaxStack > 0))
 			.sort((a, b) => Number(b.allDay) - Number(a.allDay) || this.order(a, b));
 		const shown = new Set(
@@ -790,7 +792,10 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 			this.current.setScroll({ top: keep.top, left: 0 });
 			this.current.placeInstant(keep.ms, keep.vx);
 		} else if (scroll) this.current.setScroll(scroll);
-		else if (this.current instanceof TimeGridView) this.current.scrollToTime(this.slot.scroll);
+		else if (this.current instanceof TimeGridView) {
+			this.current.scrollToTime(this.slot.scroll);
+			this.current.revealDay(this.anchor);
+		}
 		else if (this.current instanceof TimelineView) this.current.scrollToDay(this.anchor);
 
 		if (rangeChanged) this.opts.onRangeChange?.(this.view);

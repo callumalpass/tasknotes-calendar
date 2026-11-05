@@ -446,15 +446,16 @@ export class TimeGridView<D> implements View {
 			if (!link) {
 				link = h(ctx.doc, "button", "tnc-more tnc-more--stack", { type: "button", "aria-haspopup": "dialog", "data-cluster": key });
 				const anchor = link;
-				link.addEventListener("click", (ev) => ctx.openMore(c.day, anchor, ev));
+				link.addEventListener("click", (ev) => ctx.openMore(c.day, anchor, ev, JSON.parse(anchor.dataset.itemIds ?? "[]") as string[]));
 				c.more.append(link);
 			}
 			link.removeAttribute("data-stale");
+			link.dataset.itemIds = JSON.stringify(placements.filter((placement) => placement.cluster === cluster).map((placement) => placement.item.id));
 			link.classList.toggle("tnc-more--collision", collapse);
 			link.textContent = `+${rec.count}`;
 			if (collapse) {
-				link.prepend(h(ctx.doc, "span", "tnc-collision-title", null, rec.items[0]!.item.item.title));
-				link.setAttribute("aria-label", rec.items.map((placement) => placement.item.item.title).join("; "));
+				link.textContent = ctx.text.appointments(rec.count);
+				link.setAttribute("aria-label", link.textContent);
 				link.title = link.getAttribute("aria-label")!;
 			} else {
 				link.removeAttribute("aria-label");

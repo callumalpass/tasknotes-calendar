@@ -6,17 +6,19 @@ test("busy days collapse into readable stacks without widening the week", async 
 	await page.addStyleTag({ content: ".tnc-tg { --tnc-col-min: 128px; }" });
 	await page.evaluate(() => {
 		window.tnc.calendar.setOptions({ eventMaxStack: 0, slotEventOverlap: false });
-		window.tnc.setItems(Array.from({ length: 4 }, (_, index) => ({
+		window.tnc.setItems([...Array.from({ length: 4 }, (_, index) => ({
 			id: `collision-${index}`, title: `Readable appointment ${index + 1}`,
 			start: "2026-10-21T10:00:00", end: "2026-10-21T11:00:00", data: { kind: "task" },
-		})));
+		})), { id: "morning", title: "Unrelated morning appointment", start: "2026-10-21T08:00:00", end: "2026-10-21T08:30:00", data: { kind: "task" } },
+		{ id: "all-day", title: "Unrelated all-day task", start: "2026-10-21", data: { kind: "task" } }]);
 	});
 	const grid = page.locator(".tnc-tg");
 	await expect.poll(() => grid.evaluate((element) => element.style.getPropertyValue("--tnc-collision-columns"))).toBe("4");
 	expect(await grid.locator(".tnc-tg-scroll").evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
-	await expect(grid.locator(".tnc-more--collision")).toContainText("Readable appointment 1");
+	await expect(grid.locator(".tnc-more--collision")).toHaveText("4 appointments");
 	await grid.locator(".tnc-more--collision").click();
 	await expect(page.locator(".tnc-popover .tnc-item")).toHaveCount(4);
+	await expect(page.locator(".tnc-popover")).not.toContainText("Unrelated");
 	await page.keyboard.press("Escape");
 	await page.evaluate(() => window.tnc.setItems(window.tnc.items().slice(0, 1)));
 	await expect.poll(() => grid.evaluate((element) => element.style.getPropertyValue("--tnc-collision-columns"))).toBe("1");
@@ -31,6 +33,15 @@ test("busy days collapse into readable stacks without widening the week", async 
 	await expect.poll(() => grid.evaluate((element) => element.style.getPropertyValue("--tnc-collision-columns"))).toBe("2");
 	await grid.locator(".tnc-more--stack").click();
 	await expect(page.locator(".tnc-popover .tnc-item")).toHaveCount(4);
+});
+
+test("first entry and view switches reveal the selected day in a narrow week", async ({ page }) => {
+	await page.setViewportSize({ width: 400, height: 800 });
+	await open(page, "view=timeGridWeek&date=2026-10-21");
+	await expect(page.locator('.tnc-dh[data-date="2026-10-21"]')).toBeInViewport();
+	await page.selectOption(".tnc-toolbar-view-select", "month");
+	await page.selectOption(".tnc-toolbar-view-select", "week");
+	await expect(page.locator('.tnc-dh[data-date="2026-10-21"]')).toBeInViewport();
 });
 
 test("overflow clamps to the viewport on resize and Today reveals its day", async ({ page }) => {

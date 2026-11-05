@@ -59,7 +59,7 @@ export interface ViewContext<D = unknown> {
 	destroyItemEl(el: HTMLElement): void;
 	/** Builds a nav link (day number / header) for a day. */
 	navLink(day: Day, label: Node | string, cls: string): HTMLElement;
-	openMore(day: Day, anchor: HTMLElement, jsEvent: MouseEvent | KeyboardEvent): void;
+	openMore(day: Day, anchor: HTMLElement, jsEvent: MouseEvent | KeyboardEvent, itemIds?: readonly string[]): void;
 	/** Follows a date link: `onNavLink`, or switches to `view` at `day`. */
 	navigate(day: Day, jsEvent: MouseEvent | KeyboardEvent, view?: "day" | "month"): void;
 	/** Swallows the click that follows a drag the view handled itself. */
