@@ -37,7 +37,7 @@ for (const [name, query] of views) {
 for (const [name, query] of views.filter(([name]) => !["month-dots", "year"].includes(name))) {
 	test(`${name}: items reachable and operable by keyboard`, async ({ page }) => {
 		await open(page, `view=${query}&date=2026-10-21&tz=Europe%2FLondon&locale=en-GB`);
-		const id = name === "timeline" ? "p-web-research" : name === "list" ? "due-1" : "scheduled-1";
+		const id = name === "timeline" ? "p-web-research" : name === "list" ? "due-1" : name === "week" ? "scheduled-8" : "scheduled-1";
 		const target = item(page, id);
 		await expect(target).toHaveRole("button");
 		await expect(target).toHaveAccessibleName(/2026/);

@@ -66,8 +66,11 @@ test("busy days collapse into readable stacks without widening the week", async 
 		})));
 	});
 	await expect.poll(() => grid.evaluate((element) => element.style.getPropertyValue("--tnc-collision-columns"))).toBe("2");
-	await grid.locator(".tnc-more--stack").click();
+	await grid.locator(".tnc-more--stack").focus();
+	await page.keyboard.press("Enter");
 	await expect(page.locator(".tnc-popover .tnc-item")).toHaveCount(4);
+	await page.keyboard.press("Escape");
+	await expect(grid.locator(".tnc-more--stack")).toBeFocused();
 });
 
 test("first entry and view switches reveal the selected day in a narrow week", async ({ page }) => {
