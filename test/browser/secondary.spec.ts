@@ -177,7 +177,8 @@ test("busy days collapse into readable stacks without widening the week", async 
 	const grid = page.locator(".tnc-tg");
 	await expect.poll(() => grid.evaluate((element) => element.style.getPropertyValue("--tnc-collision-columns"))).toBe("4");
 	expect(await grid.locator(".tnc-tg-scroll").evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
-	await expect(grid.locator(".tnc-collision-count")).toHaveText("4 appointments");
+	await expect(grid.locator(".tnc-collision-count")).toHaveText("4");
+	await expect(grid.locator(".tnc-more--collision")).toHaveAccessibleName(/4 appointments/);
 	await expect(grid.locator(".tnc-collision-title")).not.toBeEmpty();
 	await grid.locator(".tnc-more--collision").click();
 	await expect(page.locator(".tnc-popover .tnc-item")).toHaveCount(4);

@@ -895,14 +895,18 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 
 	/** What is under a point, the date strip included. */
 	private hitAt(x: number, y: number): Hit | null {
+		const target = this.doc.elementFromPoint(x, y);
+		if (!target || !this.root.contains(target)) {
+			this.strip?.markTarget(null);
+			return null;
+		}
 		const strip = this.strip;
 		if (strip) {
-			const el = this.doc.elementFromPoint(x, y);
-			const day = el ? strip.dayAt(el) : null;
+			const day = strip.dayAt(target);
 			strip.markTarget(day !== null && this.draggingId ? day : null);
 			if (day !== null) return { kind: "day", day };
 		}
-		return this.current?.hit(x, y) ?? null;
+		return this.current?.el.contains(target) ? this.current.hit(x, y) : null;
 	}
 
 	private agendaList(): ListView<D> | null {
@@ -1492,6 +1496,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 			return;
 		}
 		this.suppressNextClick();
+		this.track(s, ev);
 		this.endSession(ev, false);
 	};
 
@@ -1530,8 +1535,13 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 			return;
 		}
 		if (!s.grab) s.grab = hit;
-		if (!hit || !s.grab) return;
+		if (!hit || !s.grab) {
+			this.invalidateProposal(s);
+			return;
+		}
 		if (s.mode === "select") {
+			s.denied = false;
+			this.root.classList.remove("tnc-drop-denied");
 			const sel = this.selectionFor(s.grab, hit);
 			if (!sel) return;
 			this.selection = sel;
@@ -1540,14 +1550,34 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		}
 		const origin = s.origin!;
 		const p = s.mode === "move" ? this.moveProposal(origin, s.grab, hit) : this.resizeProposal(origin, hit, s.mode === "resize-start");
-		if (!p) return;
+		if (!p) {
+			this.invalidateProposal(s);
+			return;
+		}
 		const allowed = this.opts.canDrop?.({ item: origin.item, start: new Date(p.startMs), end: new Date(p.endMs), allDay: p.allDay, rowId: p.rowId }) ?? true;
 		s.denied = !allowed;
 		this.root.classList.toggle("tnc-drop-denied", !allowed);
-		if (!allowed || sameProposal(p, s.proposal)) return;
+		if (!allowed) {
+			this.invalidateProposal(s);
+			return;
+		}
+		if (sameProposal(p, s.proposal)) return;
 		s.proposal = p;
 		this.dragRow = p.rowId !== undefined ? { id: origin.id, rowId: p.rowId } : null;
 		if (this.opts.view !== "list") this.applyChange(this.store.upsert([this.withProposal(origin, p)]));
+	}
+
+	private invalidateProposal(s: Session<D>): void {
+		const hadProposal = s.proposal !== null;
+		s.proposal = null;
+		s.hit = null;
+		s.denied = true;
+		this.dragRow = null;
+		this.root.classList.add("tnc-drop-denied");
+		this.strip?.markTarget(null);
+		this.unselectSilently();
+		if (s.mode === "external") this.applyChange(this.store.remove([EXTERNAL_ID]));
+		else if (hadProposal && s.origin) this.applyChange(this.store.upsert([s.origin.item]));
 	}
 
 	private trackExternal(s: Session<D>, raw: Hit | null): void {
@@ -1556,11 +1586,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		const hit = raw?.kind === "timeline" && raw.area !== "track" && raw.area !== "header" ? null : raw;
 		s.hit = hit;
 		if (!hit) {
-			if (s.proposal) {
-				s.proposal = null;
-				this.applyChange(this.store.remove([EXTERNAL_ID]));
-			}
-			this.unselectSilently();
+			this.invalidateProposal(s);
 			return;
 		}
 		const dur = src.durationMinutes ?? this.opts.defaultTimedMinutes;
@@ -1580,6 +1606,10 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 			this.opts.canDrop?.({ item: this.externalItem(src, p), start: new Date(p.startMs), end: new Date(p.endMs), allDay: p.allDay, rowId: p.rowId }) ?? true;
 		s.denied = !allowed;
 		this.root.classList.toggle("tnc-drop-denied", !allowed);
+		if (!allowed) {
+			this.invalidateProposal(s);
+			return;
+		}
 		if (sameProposal(p, s.proposal)) return;
 		s.proposal = p;
 		// Off a row (heading, date header) the drop date shows as a column.
@@ -2135,9 +2165,13 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		const dt = ev.dataTransfer;
 		if (!dt || !this.opts.acceptNativeDrop?.(dt) || !this.current) return;
 		ev.preventDefault();
+		const hit = this.hitAt(ev.clientX, ev.clientY);
+		if (!hit || (hit.kind === "timeline" && hit.area !== "track" && hit.area !== "header")) {
+			dt.dropEffect = "none";
+			this.unselectSilently();
+			return;
+		}
 		dt.dropEffect = "copy";
-		const hit = this.current.hit(ev.clientX, ev.clientY);
-		if (!hit || (hit.kind === "timeline" && hit.area !== "track" && hit.area !== "header")) return;
 		const sel = this.selectionFor(hit, hit);
 		if (!sel) return;
 		this.selection = sel;
@@ -2153,7 +2187,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		const dt = ev.dataTransfer;
 		if (!dt || !this.opts.acceptNativeDrop?.(dt) || !this.current) return;
 		ev.preventDefault();
-		const hit = this.current.hit(ev.clientX, ev.clientY);
+		const hit = this.hitAt(ev.clientX, ev.clientY);
 		this.unselectSilently();
 		if (!hit || (hit.kind === "timeline" && hit.area !== "track" && hit.area !== "header")) return;
 		const sel = this.selectionFor(hit, hit);

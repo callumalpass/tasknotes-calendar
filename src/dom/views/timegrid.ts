@@ -459,11 +459,13 @@ export class TimeGridView<D> implements View {
 			if (collapse) {
 				const items = placements.filter(placement => placement.cluster === cluster).map(placement => placement.item.item.title);
 				const count = ctx.text.appointments(rec.count);
+				const interval = `${ctx.fmt.time(rec.start)} – ${ctx.fmt.time(rec.end)}`;
 				link.replaceChildren(
-					h(ctx.doc, "span", "tnc-collision-count", null, count),
+					h(ctx.doc, "span", "tnc-collision-count", null, String(rec.count)),
+					h(ctx.doc, "span", "tnc-collision-range", null, interval),
 					h(ctx.doc, "span", "tnc-collision-title", { "aria-hidden": "true" }, items.join(" · ")),
 				);
-				link.setAttribute("aria-label", `${count}: ${items.join(", ")}`);
+				link.setAttribute("aria-label", `${count}, ${interval}: ${items.join(", ")}`);
 				link.title = link.getAttribute("aria-label")!;
 			} else {
 				link.removeAttribute("aria-label");
@@ -472,6 +474,7 @@ export class TimeGridView<D> implements View {
 			const cols = maxStack;
 			setStyle(link, {
 				top: top(rec.start),
+				height: collapse ? pct((rec.end - rec.start) / this.minutes) : "",
 				...inLane(lane, rec.split, (cols - 1) / cols, 1 / cols),
 			});
 		}
@@ -543,12 +546,10 @@ export class TimeGridView<D> implements View {
 				const r = cells[i]!.getBoundingClientRect();
 				if (x >= r.left && x < r.right) return i;
 			}
-			const firstR = cells[0]?.getBoundingClientRect();
-			const lastR = cells[cells.length - 1]?.getBoundingClientRect();
-			if (firstR && x < firstR.left) return 0;
-			if (lastR && x >= lastR.right) return cells.length - 1;
 			return -1;
 		};
+		const bounds = this.scroller.getBoundingClientRect();
+		if (x < bounds.left || x >= bounds.right || y < bounds.top || y >= bounds.bottom) return null;
 		if (this.allDayRow) {
 			const r = this.allDayRow.getBoundingClientRect();
 			if (y >= r.top && y < r.bottom || (!this.body && y >= r.top)) {
