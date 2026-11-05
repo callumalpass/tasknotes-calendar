@@ -131,6 +131,10 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	conflicts: Map<string, string[]> = new Map();
 	slot = { min: 0, max: MINUTES_PER_DAY, duration: 30, snap: 30, scroll: 480 };
 	draggingId: string | null = null;
+	private dragOriginGhost: HTMLElement | null = null;
+	private dragScrollFrame: number | null = null;
+	private readonly dragScrollOrigins = new Map<Element, { top: number; left: number }>();
+	private readonly itemWriteStates = new Map<string, "pending" | "failed" | "changed">();
 	dragRow: { id: string; rowId: string } | null = null;
 	strip: DateStrip<D> | null = null;
 	private stripSize: ResizeObserver | null = null;
@@ -509,7 +513,8 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		return out;
 	}
 
-	isEditable(n: NormalizedItem<D>, what: "start" | "duration"): boolean {
+	isEditable(n: NormalizedItem<D>, what: "start" | "duration", presentation = false): boolean {
+		if (!presentation && this.itemWriteStates.get(n.id) === "pending") return false;
 		if (n.id === EXTERNAL_ID || n.item.preview || this.opts.view === "year") return false;
 		// Agenda rows move between days; list rows have no length to resize.
 		if (this.opts.view === "list" && (!this.opts.listAgenda || what === "duration")) return false;
@@ -553,13 +558,14 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		if (preview || n.id === EXTERNAL_ID) el.classList.add("is-mirror");
 		if (this.conflicts.has(n.id)) el.classList.add("is-conflict");
 		const indicator = variant === "indicator";
-		if (!preview && !indicator && (this.isEditable(n, "start") || this.isEditable(n, "duration"))) el.classList.add("is-draggable");
+		if (!preview && !indicator && (this.isEditable(n, "start", true) || this.isEditable(n, "duration", true))) el.classList.add("is-draggable");
 		if (this.draggingId === n.id) el.classList.add("is-dragging");
 		if (this.selectedIds.has(n.id) && !preview) el.classList.add("is-selected");
 		el.classList.add(...classList(it.className));
 		const arg = this.itemArg(el, meta);
 		el.classList.add(...classList(this.opts.itemClassNames?.(arg)));
 		el.dataset.id = n.id;
+		this.applyItemWriteState(el, n.id);
 		if (it.kind) el.dataset.kind = it.kind;
 		const color = it.color ?? it.borderColor;
 		if (color) el.style.setProperty("--tnc-c", color);
@@ -591,6 +597,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	}
 
 	refreshItemEl(el: HTMLElement, meta: ElMeta<D>): void {
+		this.applyItemWriteState(el, meta.n.id);
 		const time = el.querySelector<HTMLElement>(":scope .tnc-item-time");
 		if (time) this.fillTime(time, meta.n, meta.variant, meta.day);
 		el.classList.toggle("is-dragging", this.draggingId === meta.n.id);
@@ -1142,7 +1149,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	private addHandles(el: HTMLElement, meta: ElMeta<D>): void {
 		const { n, variant } = meta;
 		const ports = variant === "timeline" && !meta.mirror && n.id !== EXTERNAL_ID && !!this.opts.timeline?.onLink;
-		if (variant === "dot" || !this.isEditable(n, "duration")) {
+		if (variant === "dot" || !this.isEditable(n, "duration", true)) {
 			if (ports) this.addPorts(el, n);
 			return;
 		}
@@ -1361,12 +1368,62 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		s.timer = null;
 		if (s.origin) {
 			this.draggingId = s.origin.id;
-			for (const el of this.elementsFor(s.origin.id)) el.classList.add("is-dragging");
+			for (const el of this.elementsFor(s.origin.id)) {
+				if (!this.dragOriginGhost && s.mode === "move") {
+					const ghost = el.cloneNode(true) as HTMLElement;
+					ghost.classList.add("tnc-drag-origin");
+					ghost.removeAttribute("data-id");
+					ghost.removeAttribute("data-task-path");
+					ghost.setAttribute("aria-hidden", "true");
+					ghost.inert = true;
+					el.parentElement?.append(ghost);
+					this.dragOriginGhost = ghost;
+				}
+				el.classList.add("is-dragging");
+			}
 		}
 		this.closeMore();
 		if (s.mode !== "select") this.unselectSilently();
 		this.root.classList.add("tnc-dragging", `tnc-dragging-${s.mode}`);
 		if (s.lastEvent) this.track(s, s.lastEvent);
+		this.startDragScroll();
+	}
+
+	private startDragScroll(): void {
+		if (this.dragScrollFrame !== null) return;
+		const tick = () => {
+			this.dragScrollFrame = null;
+			const session = this.session;
+			const pointer = session?.lastEvent;
+			if (!session?.active || !pointer) return;
+			const origin = session.origin ? this.elementsFor(session.origin.id)[0] : this.viewHost;
+			const underPointer = this.doc.elementFromPoint(pointer.clientX, pointer.clientY);
+			let moved = false;
+			if (origin && underPointer && this.root.contains(underPointer)) {
+				for (const axis of ["x", "y"] as const) {
+					const scroller = scrollerOf(origin, axis);
+					if (!scroller) continue;
+					const viewport = scroller === this.doc.scrollingElement
+						? { left: 0, top: 0, right: this.win.innerWidth, bottom: this.win.innerHeight }
+						: scroller.getBoundingClientRect();
+					const coordinate = axis === "x" ? pointer.clientX : pointer.clientY;
+					const lower = Math.max(0, axis === "x" ? viewport.left : viewport.top);
+					const upper = Math.min(axis === "x" ? this.win.innerWidth : this.win.innerHeight, axis === "x" ? viewport.right : viewport.bottom);
+					if (coordinate < lower || coordinate > upper) continue;
+					const delta = coordinate < lower + 32 ? -Math.min(12, (lower + 32 - coordinate) / 2)
+						: coordinate > upper - 32 ? Math.min(12, (coordinate - upper + 32) / 2) : 0;
+					if (!delta) continue;
+					if (!this.dragScrollOrigins.has(scroller)) this.dragScrollOrigins.set(scroller, { top: scroller.scrollTop, left: scroller.scrollLeft });
+					const before = axis === "x" ? scroller.scrollLeft : scroller.scrollTop;
+					if (axis === "x") scroller.scrollLeft += delta;
+					else scroller.scrollTop += delta;
+					moved ||= before !== (axis === "x" ? scroller.scrollLeft : scroller.scrollTop);
+				}
+			}
+			if (moved) this.track(session, pointer);
+			this.dragScrollFrame = this.win.requestAnimationFrame(tick);
+		};
+		this.dragScrollFrame = this.win.requestAnimationFrame(tick);
 	}
 
 	private readonly onTouchMove = (ev: TouchEvent) => {
@@ -1704,7 +1761,16 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	private endSession(ev: PointerEvent | null, cancel: boolean): void {
 		const s = this.session;
 		if (!s) return;
+		if (this.dragScrollFrame !== null) this.win.cancelAnimationFrame(this.dragScrollFrame);
+		this.dragScrollFrame = null;
+		if (cancel || s.denied) for (const [scroller, position] of this.dragScrollOrigins) {
+			scroller.scrollTop = position.top;
+			scroller.scrollLeft = position.left;
+		}
+		this.dragScrollOrigins.clear();
 		this.session = null;
+		this.dragOriginGhost?.remove();
+		this.dragOriginGhost = null;
 		if (s.timer !== null) this.win.clearTimeout(s.timer);
 		this.listenDoc(false);
 		this.root.classList.remove(
@@ -1785,6 +1851,11 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		ev: PointerEvent | KeyboardEvent | null,
 		revert: () => void,
 	): void {
+		let reverted = false;
+		const mark = (state: "pending" | "failed" | "changed") => {
+			this.itemWriteStates.set(origin.id, state);
+			for (const element of this.elementsFor(origin.id)) this.applyItemWriteState(element, origin.id);
+		};
 		const arg: ItemChangeArg<D> = {
 			item: origin.item,
 			start: new Date(p.startMs),
@@ -1800,18 +1871,27 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 			jsEvent: ev,
 			source: ev && "key" in ev ? "keyboard" : "pointer",
 			view: this.view,
-			revert,
+			revert: () => { reverted = true; revert(); mark("failed"); },
 		};
 		const handler = kind === "drop" ? this.opts.onItemDrop : this.opts.onItemResize;
 		try {
+			mark("pending");
 			const res: unknown = handler?.(arg);
 			if (res && typeof (res as PromiseLike<unknown>).then === "function") {
-				Promise.resolve(res).catch(() => revert());
+				void Promise.resolve(res).then(() => { if (!reverted) mark("changed"); }, () => arg.revert());
 			}
+			else if (!reverted) mark("changed");
 		} catch (err) {
-			revert();
+			arg.revert();
 			throw err;
 		}
+	}
+
+	private applyItemWriteState(element: HTMLElement, id: string): void {
+		const state = this.itemWriteStates.get(id);
+		for (const name of ["pending", "failed", "changed"]) element.classList.toggle(`is-write-${name}`, state === name);
+		if (state === "pending") element.setAttribute("aria-busy", "true");
+		else element.removeAttribute("aria-busy");
 	}
 
 	/* --------------------------------------------------------- click / keys */

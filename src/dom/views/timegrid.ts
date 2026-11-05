@@ -457,8 +457,13 @@ export class TimeGridView<D> implements View {
 			link.classList.toggle("tnc-more--collision", collapse);
 			link.textContent = `+${rec.count}`;
 			if (collapse) {
-				link.textContent = ctx.text.appointments(rec.count);
-				link.setAttribute("aria-label", link.textContent);
+				const items = placements.filter(placement => placement.cluster === cluster).map(placement => placement.item.item.title);
+				const count = ctx.text.appointments(rec.count);
+				link.replaceChildren(
+					h(ctx.doc, "span", "tnc-collision-count", null, count),
+					h(ctx.doc, "span", "tnc-collision-title", { "aria-hidden": "true" }, items.join(" · ")),
+				);
+				link.setAttribute("aria-label", `${count}: ${items.join(", ")}`);
 				link.title = link.getAttribute("aria-label")!;
 			} else {
 				link.removeAttribute("aria-label");

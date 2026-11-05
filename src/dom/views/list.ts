@@ -80,6 +80,7 @@ export class ListView<D> implements View {
 		const leadItems: NormalizedItem<D>[] = [];
 		const inLead = new Set<string>();
 		const keep = new Set<Day>();
+		let itemCount = 0;
 		let prev: HTMLElement | null = null;
 		for (const day of days) {
 			let items = this.itemsOn(day);
@@ -112,6 +113,7 @@ export class ListView<D> implements View {
 				this.pools.set(day, pool);
 			}
 			section.classList.toggle("is-empty", !items.length);
+			itemCount += items.length;
 			this.fill(pool, items, () => day);
 			if (prev ? prev.nextSibling !== section : this.body.firstChild !== section) {
 				if (prev) prev.after(section);
@@ -128,12 +130,12 @@ export class ListView<D> implements View {
 		}
 		this.renderLead(leadItems);
 		let empty = this.body.querySelector<HTMLElement>(":scope > .tnc-list-empty");
-		if (!keep.size && !leadItems.length) {
+		if (!itemCount && !leadItems.length && (!agenda || opts.listEmptyContent)) {
 			if (!empty) {
 				empty = h(doc, "div", "tnc-list-empty", { role: "listitem" }, ctx.text.noItems);
 				const content = ctx.opts.listEmptyContent?.();
 				if (content) empty.replaceChildren(content);
-				this.body.append(empty);
+				this.body.prepend(empty);
 			}
 		} else empty?.remove();
 		this.ctx.strip?.draw();

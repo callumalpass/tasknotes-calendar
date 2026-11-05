@@ -1,5 +1,97 @@
 import { expect, test } from "@playwright/test";
-import { open } from "./helpers";
+import { open, center } from "./helpers";
+
+test("empty agenda preserves host recovery alongside per-day creation", async ({ page }) => {
+	await open(page, "view=listWeek&agenda=1&date=2026-10-21");
+	await page.evaluate(() => {
+		window.tnc.calendar.setOptions({ listAgenda: true, listEmptyContent: () => {
+			const recovery = document.createElement("button");
+			recovery.textContent = "Clear filters";
+			return recovery;
+		} });
+		window.tnc.setItems([]);
+	});
+	await expect(page.getByRole("button", { name: "Clear filters" })).toBeVisible();
+	await expect(page.locator(".tnc-list-add").first()).toBeVisible();
+	await page.evaluate(() => window.tnc.setItems([{ id: "single", title: "Single task", start: "2026-10-21" }]));
+	await expect(page.getByRole("button", { name: "Clear filters" })).toHaveCount(0);
+});
+
+test("drag origin stays in place and Escape restores the event exactly", async ({ page }) => {
+	await open(page, "view=timeGridDay&date=2026-10-21");
+	await page.evaluate(() => window.tnc.setItems([{ id: "gesture", title: "Write release notes", start: "2026-10-21T10:00", end: "2026-10-21T11:00" }]));
+	const event = page.locator('.tnc-item[data-id="gesture"]');
+	const before = await event.boundingBox();
+	const pointer = await center(event);
+	await page.mouse.move(pointer.x, pointer.y);
+	await page.mouse.down();
+	await page.mouse.move(pointer.x, pointer.y + 60, { steps: 10 });
+	const origin = page.locator(".tnc-drag-origin");
+	await expect(origin).toHaveCount(1);
+	expect(await origin.boundingBox()).toEqual(before);
+	await expect(origin).toHaveAttribute("aria-hidden", "true");
+	await page.keyboard.press("Escape");
+	await page.mouse.up();
+	await expect(origin).toHaveCount(0);
+	await expect(page.locator(".tnc-dragging")).toHaveCount(0);
+	expect(await event.boundingBox()).toEqual(before);
+});
+
+test("invalid targets and scroll-edge drags cancel without stale state", async ({ page }) => {
+	await open(page, "view=timeGridDay&date=2026-10-21");
+	await page.evaluate(() => window.tnc.calendar.setOptions({ slotHeight: 48 }));
+	await page.evaluate(() => window.tnc.setItems([{ id: "edge", title: "Scroll-edge appointment", start: "2026-10-21T10:00", end: "2026-10-21T11:00" }]));
+	const event = page.locator('.tnc-item[data-id="edge"]');
+	await event.scrollIntoViewIfNeeded();
+	const pointer = await center(event);
+	await page.evaluate(() => window.tnc.calendar.setOptions({ canDrop: () => false }));
+	await page.mouse.move(pointer.x, pointer.y);
+	await page.mouse.down();
+	await page.mouse.move(pointer.x, pointer.y + 40, { steps: 8 });
+	await expect(page.locator(".tnc-drop-denied")).toHaveCount(1);
+	await page.keyboard.press("Escape");
+	await page.mouse.up();
+	await page.evaluate(() => window.tnc.calendar.setOptions({ canDrop: () => true }));
+	await event.scrollIntoViewIfNeeded();
+	const origin = await center(event);
+	const scroller = page.locator(".tnc-tg-scroll");
+	const scrollTop = await scroller.evaluate(element => element.scrollTop);
+	const bounds = (await scroller.boundingBox())!;
+	await page.mouse.move(origin.x, origin.y);
+	await page.mouse.down();
+	await page.mouse.move(origin.x, bounds.y + bounds.height - 5, { steps: 12 });
+	await expect.poll(() => scroller.evaluate(element => element.scrollTop)).toBeGreaterThan(scrollTop);
+	await page.keyboard.press("Escape");
+	await page.mouse.up();
+	await expect(page.locator(".tnc-drag-origin, .tnc-dragging, .tnc-drop-denied")).toHaveCount(0);
+	expect(await scroller.evaluate(element => element.scrollTop)).toBe(scrollTop);
+});
+
+test("pending, settled and reverted writes retain distinct states across refreshes", async ({ page }) => {
+	await open(page, "view=timeGridDay&date=2026-10-21");
+	await page.evaluate(() => {
+		window.tnc.setItems([{ id: "write", title: "Write release notes", start: "2026-10-21T10:00", end: "2026-10-21T11:00" }]);
+		window.tnc.calendar.setOptions({ onItemDrop: () => new Promise<void>(resolve => {
+			(window as typeof window & { completeWrite: () => void }).completeWrite = resolve;
+		}) });
+	});
+	const event = page.locator('.tnc-item[data-id="write"]');
+	await event.focus();
+	await page.keyboard.press("Alt+ArrowDown");
+	await expect(event).toHaveAttribute("aria-busy", "true");
+	await expect(event).toHaveClass(/is-write-pending/);
+	await page.evaluate(() => window.tnc.setItems(window.tnc.items().map(item => ({ ...item, title: "Refreshed while saving" }))));
+	await expect(event).toHaveAttribute("aria-busy", "true");
+	await expect(event.locator(".tnc-resize-end")).toHaveCount(1);
+	await page.evaluate(() => (window as typeof window & { completeWrite: () => void }).completeWrite());
+	await expect(event).toHaveClass(/is-write-changed/);
+	await expect(event).not.toHaveAttribute("aria-busy");
+	await expect(event.locator(".tnc-resize-end")).toHaveCount(1);
+	await page.evaluate(() => window.tnc.calendar.setOptions({ onItemDrop: arg => arg.revert() }));
+	await event.focus();
+	await page.keyboard.press("Alt+ArrowDown");
+	await expect(event).toHaveClass(/is-write-failed/);
+});
 
 test("month overflow retains its focus anchor across item refreshes", async ({ page }) => {
 	await open(page, "view=dayGridMonth&date=2026-10-21");
@@ -50,7 +142,8 @@ test("busy days collapse into readable stacks without widening the week", async 
 	const grid = page.locator(".tnc-tg");
 	await expect.poll(() => grid.evaluate((element) => element.style.getPropertyValue("--tnc-collision-columns"))).toBe("4");
 	expect(await grid.locator(".tnc-tg-scroll").evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
-	await expect(grid.locator(".tnc-more--collision")).toHaveText("4 appointments");
+	await expect(grid.locator(".tnc-collision-count")).toHaveText("4 appointments");
+	await expect(grid.locator(".tnc-collision-title")).not.toBeEmpty();
 	await grid.locator(".tnc-more--collision").click();
 	await expect(page.locator(".tnc-popover .tnc-item")).toHaveCount(4);
 	await expect(page.locator(".tnc-popover")).not.toContainText("Unrelated");
