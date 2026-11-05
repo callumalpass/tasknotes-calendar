@@ -490,14 +490,6 @@
 	color: var(--tnc-text);
 	font-weight: 650;
 }
-.tnc-collision-title {
-	min-width: 0;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-	color: var(--tnc-muted);
-	font-weight: 400;
-}
 .tnc-item--indicator .tnc-item-title {
 	white-space: nowrap;
 	overflow-wrap: normal;
@@ -545,6 +537,10 @@
 .tnc-collision-title {
 	flex: 1;
 	min-width: 0;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--tnc-muted);
+	font-weight: 400;
 	display: -webkit-box;
 	-webkit-box-orient: vertical;
 	-webkit-line-clamp: 3;
@@ -1767,16 +1763,14 @@
 .tnc-popover-body .tnc-item {
 	position: relative;
 	flex: none;
+	height: auto;
+	min-height: 40px;
 }
 .tnc-popover-title {
 	min-width: 0;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
-}
-.tnc-popover-body .tnc-item {
-	height: auto;
-	min-height: 40px;
 }
 .tnc-popover-body .tnc-item-main {
 	min-height: 40px;
@@ -1826,7 +1820,7 @@
 	box-shadow: none;
 }
 .tnc .tnc-item.tnc-drag-preview {
-	position: fixed;
+	position: absolute;
 	z-index: var(--tnc-theme-drag-z, 1000);
 	pointer-events: none;
 	background: var(--tnc-surface);

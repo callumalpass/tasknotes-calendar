@@ -1520,8 +1520,9 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	private track(s: Session<D>, ev: PointerEvent): void {
 		if (this.listDragPreview) {
 			const preview = this.listDragPreview;
-			preview.element.style.left = `${Math.max(8, Math.min(this.win.innerWidth - preview.width - 8, ev.clientX - preview.offsetX))}px`;
-			preview.element.style.top = `${Math.max(8, Math.min(this.win.innerHeight - preview.height - 8, ev.clientY - preview.offsetY))}px`;
+			const bounds = this.root.getBoundingClientRect();
+			preview.element.style.left = `${Math.max(8, Math.min(this.win.innerWidth - preview.width - 8, ev.clientX - preview.offsetX)) - bounds.left}px`;
+			preview.element.style.top = `${Math.max(8, Math.min(this.win.innerHeight - preview.height - 8, ev.clientY - preview.offsetY)) - bounds.top}px`;
 		}
 		const hit = this.hitAt(ev.clientX, ev.clientY);
 		if (s.mode === "external") {
