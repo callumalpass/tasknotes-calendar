@@ -44,6 +44,7 @@ function inLane(lane: "plan" | "actual", split: boolean, left: number, width: nu
 export class TimeGridView<D> implements View {
 	readonly el: HTMLElement;
 	private readonly scroller: HTMLElement;
+	private readonly dayNavigation: HTMLElement;
 	private readonly top: HTMLElement;
 	private readonly headRow: HTMLElement;
 	private readonly allDayRow: HTMLElement | null;
@@ -65,6 +66,8 @@ export class TimeGridView<D> implements View {
 		this.el = h(doc, "div", "tnc-tg", { role: "table", "aria-label": ctx.view.title });
 		this.el.classList.toggle("tnc-tg--no-grid", !showGrid);
 		this.scroller = h(doc, "div", "tnc-tg-scroll");
+		this.dayNavigation = h(doc, "div", "tnc-tg-day-navigation", { role: "group", "aria-label": ctx.view.title });
+		this.scroller.addEventListener("scroll", () => this.updateDayNavigation());
 		this.top = h(doc, "div", "tnc-tg-top");
 		this.headRow = h(doc, "div", "tnc-tg-head tnc-tg-cols", { role: "row" });
 		this.top.append(this.headRow);
@@ -92,7 +95,7 @@ export class TimeGridView<D> implements View {
 		} else {
 			this.body = this.gutter = null;
 		}
-		this.el.append(this.scroller);
+		this.el.append(this.dayNavigation, this.scroller);
 		this.build();
 		if (showGrid && opts.height === "fill") {
 			const RO = (ctx.win as Window & { ResizeObserver?: typeof ResizeObserver }).ResizeObserver;
@@ -148,6 +151,9 @@ export class TimeGridView<D> implements View {
 				head.append(cap);
 			}
 			this.headRow.append(head);
+			const dayButton = h(doc, "button", "tnc-btn", { type: "button", "aria-label": ctx.fmt.longDate(day) }, `${ctx.fmt.weekdayShort(day)} ${ctx.fmt.dayNumber(day)}`);
+			dayButton.addEventListener("click", () => this.revealDay(day));
+			this.dayNavigation.append(dayButton);
 			opts.dayHeaderDidMount?.({ ...arg, el: head });
 
 			const col = h(doc, "div", ["tnc-col", ...ctx.dayClasses(day)].join(" "), { role: "cell", "aria-label": ctx.fmt.longDate(day), "data-date": arg.dateStr });
@@ -227,13 +233,17 @@ export class TimeGridView<D> implements View {
 
 	render(change: StoreChange | null): void {
 		this.renderAllDay();
-		if (!this.body) return;
+		if (!this.body) {
+			this.updateDayNavigation();
+			return;
+		}
 		const dirty = change ? change.days : null;
 		for (const c of this.cols) {
 			if (dirty && !dirty.has(c.day) && !(this.ctx.slot.max > MINUTES_PER_DAY && dirty.has(c.day + 1))) continue;
 			this.renderColumn(c);
 		}
 		this.el.style.setProperty("--tnc-collision-columns", String(Math.max(1, ...this.cols.map((column) => column.collisionColumns))));
+		this.updateDayNavigation();
 		this.renderCapacity();
 		this.tick();
 	}
@@ -378,8 +388,10 @@ export class TimeGridView<D> implements View {
 
 		const hasActual = layout.actual.length > 0;
 		c.col.classList.toggle("has-actual", hasActual);
+		for (const link of c.more.children) link.setAttribute("data-stale", "true");
 		this.placeLane(c.plan, layout.plan, c, top, height, "plan");
 		this.placeLane(c.actual, layout.actual, c, top, height, "actual");
+		for (const link of [...c.more.children]) if (link.hasAttribute("data-stale")) link.remove();
 	}
 
 	private placeLane(
@@ -392,8 +404,11 @@ export class TimeGridView<D> implements View {
 	): void {
 		const { ctx } = this;
 		const { opts } = ctx;
-		const withMore = lane === "plan";
-		const maxStack = opts.eventMaxStack;
+		const readableWidth = Number.parseFloat(ctx.win.getComputedStyle(this.el).getPropertyValue("--tnc-event-min-width")) || 128;
+		const laneWidth = c.col.clientWidth * (lane === "actual" && placements.some((placement) => placement.split) ? 0.22 : 1);
+		const collapse = placements.some((placement) => placement.cols > 1 && placement.cols * readableWidth > laneWidth);
+		const withMore = lane === "plan" || collapse;
+		const maxStack = collapse ? 1 : opts.eventMaxStack;
 		const hiddenByCluster = new Map<number, { count: number; start: number; end: number; split: boolean; items: TimedPlacement<D>[] }>();
 		pool.begin();
 		for (const p of placements) {
@@ -425,16 +440,31 @@ export class TimeGridView<D> implements View {
 		}
 		pool.end();
 		if (!withMore) return;
-		c.more.replaceChildren();
-		for (const rec of hiddenByCluster.values()) {
-			const link = h(ctx.doc, "button", "tnc-more tnc-more--stack", { type: "button", "aria-haspopup": "dialog" }, `+${rec.count}`);
+		for (const [cluster, rec] of hiddenByCluster) {
+			const key = `${lane}-${cluster}`;
+			let link = c.more.querySelector<HTMLElement>(`[data-cluster="${key}"]`);
+			if (!link) {
+				link = h(ctx.doc, "button", "tnc-more tnc-more--stack", { type: "button", "aria-haspopup": "dialog", "data-cluster": key });
+				const anchor = link;
+				link.addEventListener("click", (ev) => ctx.openMore(c.day, anchor, ev));
+				c.more.append(link);
+			}
+			link.removeAttribute("data-stale");
+			link.classList.toggle("tnc-more--collision", collapse);
+			link.textContent = `+${rec.count}`;
+			if (collapse) {
+				link.prepend(h(ctx.doc, "span", "tnc-collision-title", null, rec.items[0]!.item.item.title));
+				link.setAttribute("aria-label", rec.items.map((placement) => placement.item.item.title).join("; "));
+				link.title = link.getAttribute("aria-label")!;
+			} else {
+				link.removeAttribute("aria-label");
+				link.removeAttribute("title");
+			}
 			const cols = maxStack;
 			setStyle(link, {
 				top: top(rec.start),
 				...inLane(lane, rec.split, (cols - 1) / cols, 1 / cols),
 			});
-			link.addEventListener("click", (ev) => ctx.openMore(c.day, link, ev));
-			c.more.append(link);
 		}
 	}
 
@@ -554,6 +584,28 @@ export class TimeGridView<D> implements View {
 
 	resize(): void {
 		this.fitRows();
+		this.render(null);
+	}
+
+	revealDay(day: Day): void {
+		const column = this.cols.find((candidate) => candidate.day === day);
+		if (!column) return;
+		const bounds = column.head.getBoundingClientRect();
+		const viewport = this.scroller.getBoundingClientRect();
+		this.scroller.scrollLeft += bounds.left - viewport.left - (viewport.width - bounds.width) / 2;
+		this.updateDayNavigation();
+	}
+
+	private updateDayNavigation(): void {
+		this.dayNavigation.hidden = this.scroller.scrollWidth <= this.scroller.clientWidth + 1;
+		const viewport = this.scroller.getBoundingClientRect();
+		this.cols.forEach((column, index) => {
+			const bounds = column.head.getBoundingClientRect();
+			const visible = bounds.left >= viewport.left && bounds.right <= viewport.right;
+			const button = this.dayNavigation.children[index];
+			button?.classList.toggle("is-offscreen", !visible);
+			button?.setAttribute("aria-pressed", String(visible));
+		});
 	}
 
 	scrollToTime(minute: number): void {

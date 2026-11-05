@@ -193,6 +193,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 			this.resizeObs = new RO(() => {
 				this.syncToolbarViewDisplay();
 				this.current?.resize?.();
+				this.positionMore();
 			});
 			this.resizeObs.observe(this.root);
 		}
@@ -215,9 +216,11 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		if (this.frame !== null) old.cancelAnimationFrame(this.frame);
 		this.timer = this.frame = null;
 		this.doc.removeEventListener("pointerdown", this.onDocPointerDown, true);
+		this.listenMoreGeometry(false);
 		this.doc = doc;
 		this.win = doc.defaultView ?? old;
 		this.doc.addEventListener("pointerdown", this.onDocPointerDown, true);
+		this.listenMoreGeometry(true);
 		this.observeResize();
 		this.rebuild(false);
 		this.scheduleTick();
@@ -356,6 +359,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	goToday(): void {
 		this.anchor = this.todayDay();
 		this.rebuild(true);
+		if (this.current instanceof TimeGridView) this.current.revealDay(this.anchor);
 	}
 
 	/** The anchor date, as local midnight of that civil day in the calendar zone. */
@@ -378,6 +382,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	/** Re-measures (e.g. after the host was shown or resized by a parent). */
 	updateSize(): void {
 		this.current?.resize?.();
+		this.positionMore();
 	}
 
 	getScroll(): { top: number; left: number } {
@@ -413,7 +418,10 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		}
 		const view = this.current;
 		if (view instanceof TimelineView) view.scrollToInstant(ms, opts.align ?? "center", opts.smooth ?? false);
-		else if (view instanceof TimeGridView && p.kind !== "day") view.scrollToTime(wallTime(ms, this.zone).minute);
+		else if (view instanceof TimeGridView) {
+			view.revealDay(day);
+			if (p.kind !== "day") view.scrollToTime(wallTime(ms, this.zone).minute);
+		}
 	}
 
 	/** What is under a client point: a time slot, a day, or a timeline row and date. Null outside the view. */
@@ -613,7 +621,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		jsEvent.stopPropagation();
 		const items = this.store
 			.inRange(day, day + 1)
-			.filter((n) => n.item.display !== "background" && (n.allDay || this.opts.view === "month" || !this.opts.timeGrid || this.opts.eventMaxStack > 0))
+			.filter((n) => n.item.display !== "background" && (n.allDay || anchor.classList.contains("tnc-more--stack") || this.opts.view === "month" || !this.opts.timeGrid || this.opts.eventMaxStack > 0))
 			.sort((a, b) => Number(b.allDay) - Number(a.allDay) || this.order(a, b));
 		const shown = new Set(
 			[...this.viewHost.querySelectorAll<HTMLElement>(".tnc-item")]
@@ -645,16 +653,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		}
 		pool.end();
 		this.popover = { el, pool, anchor, day };
-		// Position within the calendar.
-		const rr = this.root.getBoundingClientRect();
-		const ar = anchor.getBoundingClientRect();
-		const w = Math.max(220, ar.width + 24);
-		let left = ar.left - rr.left - 12;
-		left = Math.max(4, Math.min(left, rr.width - w - 4));
-		let top = ar.top - rr.top - 40;
-		const height = el.offsetHeight;
-		top = Math.max(4, Math.min(top, rr.height - height - 4));
-		setStyle(el, { left, top, width: w });
+		this.positionMore();
 		el.focus();
 	}
 
@@ -1165,6 +1164,41 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 
 	/* ============================================================== popover */
 
+	private readonly onMoreGeometryChange = () => this.positionMore();
+
+	private listenMoreGeometry(on: boolean): void {
+		const method = on ? "addEventListener" : "removeEventListener";
+		this.doc[method]("scroll", this.onMoreGeometryChange, true);
+		this.win[method]("resize", this.onMoreGeometryChange);
+		this.win.visualViewport?.[method]("resize", this.onMoreGeometryChange);
+		this.win.visualViewport?.[method]("scroll", this.onMoreGeometryChange);
+	}
+
+	private positionMore(): void {
+		const popover = this.popover;
+		if (!popover) return;
+		if (!popover.anchor.isConnected) {
+			this.closeMore();
+			return;
+		}
+		const viewport = this.win.visualViewport;
+		const root = this.root.getBoundingClientRect();
+		const anchor = popover.anchor.getBoundingClientRect();
+		const leftEdge = Math.max(root.left, viewport?.offsetLeft ?? 0) + 4;
+		const topEdge = Math.max(root.top, viewport?.offsetTop ?? 0) + 4;
+		const rightEdge = Math.min(root.right, (viewport?.offsetLeft ?? 0) + (viewport?.width ?? this.win.innerWidth)) - 4;
+		const bottomEdge = Math.min(root.bottom, (viewport?.offsetTop ?? 0) + (viewport?.height ?? this.win.innerHeight)) - 4;
+		if (rightEdge <= leftEdge || bottomEdge <= topEdge) {
+			this.closeMore();
+			return;
+		}
+		const width = Math.min(360, rightEdge - leftEdge);
+		setStyle(popover.el, { width, "max-height": Math.min(420, bottomEdge - topEdge) });
+		const left = Math.max(leftEdge, Math.min(anchor.left - 12, rightEdge - width));
+		const top = Math.max(topEdge, Math.min(anchor.top - 40, bottomEdge - popover.el.offsetHeight));
+		setStyle(popover.el, { left: left - root.left, top: top - root.top });
+	}
+
 	private refreshMore(): void {
 		const p = this.popover;
 		if (!p) return;
@@ -1177,6 +1211,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 			p.pool.place(n.id, { n, day: p.day, isStart: n.startDay >= p.day, isEnd: n.endDay <= p.day + 1, variant: n.allDay ? "bar" : "dot", mirror: false });
 		}
 		p.pool.end();
+		this.positionMore();
 	}
 
 	private closeMore(restoreFocus = false): void {
@@ -1208,6 +1243,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		r.addEventListener("pointerover", this.onAdoptCheck);
 		r.addEventListener("focusin", this.onAdoptCheck);
 		this.doc.addEventListener("pointerdown", this.onDocPointerDown, true);
+		this.listenMoreGeometry(true);
 	}
 
 	private unbindEvents(): void {
@@ -1227,6 +1263,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		r.removeEventListener("pointerover", this.onAdoptCheck);
 		r.removeEventListener("focusin", this.onAdoptCheck);
 		this.doc.removeEventListener("pointerdown", this.onDocPointerDown, true);
+		this.listenMoreGeometry(false);
 		this.listenDoc(false);
 	}
 
@@ -1276,6 +1313,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 			mode = "select";
 		}
 		const touch = ev.pointerType === "touch";
+		const overflowOrigin = itemEl?.closest(".tnc-popover") && origin ? wallTime(origin.startMs, this.zone) : null;
 		const s: Session<D> = {
 			mode,
 			pointerId: ev.pointerId,
@@ -1284,7 +1322,9 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 			y0: ev.clientY,
 			active: false,
 			origin,
-			grab: this.current?.hit(ev.clientX, ev.clientY) ?? null,
+			grab: overflowOrigin && this.current instanceof TimeGridView && !origin?.allDay
+				? { kind: "time", day: overflowOrigin.day, minute: overflowOrigin.minute }
+				: this.current?.hit(ev.clientX, ev.clientY) ?? null,
 			proposal: null,
 			denied: false,
 			timer: null,
@@ -1847,6 +1887,26 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	}
 
 	private readonly onKeyDown = (ev: KeyboardEvent) => {
+		if (this.popover && !ev.altKey && !ev.ctrlKey && !ev.metaKey && ["ArrowDown", "ArrowUp", "Home", "End"].includes(ev.key)) {
+			const rows = [...this.popover.el.querySelectorAll<HTMLElement>(".tnc-item")];
+			const index = rows.indexOf(this.doc.activeElement as HTMLElement);
+			const next = ev.key === "Home" ? 0 : ev.key === "End" ? rows.length - 1 :
+				ev.key === "ArrowDown" ? (index + 1) % rows.length : (index <= 0 ? rows.length - 1 : index - 1);
+			ev.preventDefault();
+			ev.stopPropagation();
+			rows[next]?.focus();
+			rows[next]?.scrollIntoView({ block: "nearest", inline: "nearest" });
+			return;
+		}
+		if (ev.key === "Tab" && this.popover) {
+			const controls = [...this.popover.el.querySelectorAll<HTMLElement>('button, a[href], [tabindex="0"]')];
+			const index = controls.indexOf(this.doc.activeElement as HTMLElement);
+			const next = ev.shiftKey ? (index <= 0 ? controls.length - 1 : index - 1) : (index + 1) % controls.length;
+			ev.preventDefault();
+			ev.stopPropagation();
+			controls[next]?.focus();
+			return;
+		}
 		if (ev.key === "Escape" && this.popover) {
 			ev.preventDefault();
 			ev.stopPropagation();

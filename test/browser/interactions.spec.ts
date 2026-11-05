@@ -4,11 +4,11 @@ import { center, drag, item, lastLog, open, slotPoint } from "./helpers";
 test.describe("time grid", () => {
 	test("dragging a task moves it and reports TaskNotes-style strings", async ({ page }) => {
 		await open(page, "view=timeGridWeek");
+		await page.locator('.tnc-col[data-date="2026-10-19"] .tnc-more--collision').click();
 		const el = item(page, "scheduled-1"); // Mon 19th 09:00-10:30
 		const from = await center(el);
 		const target = await slotPoint(page, "2026-10-20", 14 * 60 + 5);
-		const delta = { x: target.x - from.x, y: target.y - (await slotPoint(page, "2026-10-19", 9 * 60 + 5)).y };
-		await drag(page, from, { x: from.x + delta.x, y: from.y + delta.y });
+		await drag(page, from, target);
 		await expect.poll(() => lastLog(page, "drop")).toBe("drop scheduled-1 2026-10-20T14:00 → 2026-10-20T15:30");
 		await expect(page.locator('.tnc-col[data-date="2026-10-20"] .tnc-item[data-id="scheduled-1"]')).toBeVisible();
 		await expect(page.locator('.tnc-col[data-date="2026-10-19"] .tnc-item[data-id="scheduled-1"]')).toHaveCount(0);
@@ -394,6 +394,7 @@ test("a calendar moved into another window keeps dragging (popout windows)", asy
 		doc.body.append(window.tnc.calendar.host);
 	});
 	const frame = page.frameLocator("iframe");
+	await frame.locator('.tnc-col[data-date="2026-10-19"] .tnc-more--collision').click();
 	const el = frame.locator('.tnc-item[data-id="scheduled-1"]');
 	await expect(el).toBeVisible();
 	const box = (await el.boundingBox())!;

@@ -112,19 +112,24 @@ and changes views through the same navigation lifecycle as the buttons.
 Set `--tnc-theme-*` variables on the host (they inherit into the calendar)
 or on `.tnc`. The stylesheet is scoped to `.tnc` and does not inject CSS.
 
-Time grids expose `--tnc-collision-columns`, the largest visible timed-event
-column count in the current range (respecting `eventMaxStack`). Hosts can opt in
-to readable collision widths without changing the default layout:
+Time grids collapse crowded collision groups into labelled, expandable stacks
+instead of widening every day. `--tnc-event-min-width` sets the readable event
+width in pixels (default 128). Keep the day minimum independent of collisions:
 
 ```css
 .my-calendar .tnc-tg {
-  --tnc-col-min: max(180px, calc(var(--tnc-collision-columns, 1) * 120px));
+  --tnc-col-min: 128px;
+  --tnc-event-min-width: 128px;
 }
 ```
 
-The grid scrolls horizontally when these minimum widths exceed the viewport;
-headers, all-day rows and timed columns remain aligned. The count is recomputed
-after incremental additions, updates and removals, so widths can shrink again.
+When the day minimums exceed a narrow viewport, persistent day buttons reveal
+offscreen dates, and Today reveals the current day. Headers, all-day rows and
+timed columns stay aligned. `--tnc-collision-columns` remains available as
+diagnostic metadata (respecting `eventMaxStack`), not a week-wide width multiplier.
+Overflow dialogs clamp to the visible calendar and viewport, scroll vertically,
+and support Tab, arrow keys, Home, End and Escape. Timed items dragged from
+overflow start at their actual time rather than the slot underneath the dialog.
 
 Timed events also expose `--tnc-event-readable-width`, the percentage of their
 width not covered by the next collision column. Hosts can use it as the

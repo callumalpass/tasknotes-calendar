@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Crowded time-grid days use readable collision stacks without widening the entire week; stack contents retain drag-and-drop, including after moving the calendar into another window.
+- Today reveals the current day horizontally, with persistent day navigation when the grid is wider than its pane.
+- Overflow dialogs clamp to the visible viewport, reposition on resize and scroll, keep Close reachable, and provide touch-sized rows and keyboard navigation.
+
 ## 0.1.6
 
 ### Changed

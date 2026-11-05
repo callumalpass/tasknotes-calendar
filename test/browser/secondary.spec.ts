@@ -1,9 +1,9 @@
 import { expect, test } from "@playwright/test";
 import { open } from "./helpers";
 
-test("hosts can reserve readable collision columns and widths shrink after incremental removal", async ({ page }) => {
+test("busy days collapse into readable stacks without widening the week", async ({ page }) => {
 	await open(page, "view=timeGridWeek&date=2026-10-21");
-	await page.addStyleTag({ content: ".tnc-tg { --tnc-col-min: max(180px, calc(var(--tnc-collision-columns, 1) * 120px)); }" });
+	await page.addStyleTag({ content: ".tnc-tg { --tnc-col-min: 128px; }" });
 	await page.evaluate(() => {
 		window.tnc.calendar.setOptions({ eventMaxStack: 0, slotEventOverlap: false });
 		window.tnc.setItems(Array.from({ length: 4 }, (_, index) => ({
@@ -13,18 +13,14 @@ test("hosts can reserve readable collision columns and widths shrink after incre
 	});
 	const grid = page.locator(".tnc-tg");
 	await expect.poll(() => grid.evaluate((element) => element.style.getPropertyValue("--tnc-collision-columns"))).toBe("4");
-	expect(await grid.locator(".tnc-tg-scroll").evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
-	for (const event of await grid.locator(".tnc-item--timed").all()) expect((await event.boundingBox())!.width).toBeGreaterThan(110);
-	await page.addStyleTag({ content: ".tnc-item--timed .tnc-item-main { max-width: var(--tnc-event-readable-width, 100%); }" });
-	await page.evaluate(() => window.tnc.calendar.setOptions({ slotEventOverlap: true }));
-	const overlapping = grid.locator(".tnc-item--timed");
-	for (let index = 0; index < 3; index++) {
-		const content = await overlapping.nth(index).locator(".tnc-item-main").boundingBox();
-		const next = await overlapping.nth(index + 1).boundingBox();
-		expect(content!.x + content!.width).toBeLessThanOrEqual(next!.x);
-	}
+	expect(await grid.locator(".tnc-tg-scroll").evaluate((element) => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(1);
+	await expect(grid.locator(".tnc-more--collision")).toContainText("Readable appointment 1");
+	await grid.locator(".tnc-more--collision").click();
+	await expect(page.locator(".tnc-popover .tnc-item")).toHaveCount(4);
+	await page.keyboard.press("Escape");
 	await page.evaluate(() => window.tnc.setItems(window.tnc.items().slice(0, 1)));
 	await expect.poll(() => grid.evaluate((element) => element.style.getPropertyValue("--tnc-collision-columns"))).toBe("1");
+	await expect(grid.locator(".tnc-more--collision")).toHaveCount(0);
 	await page.evaluate(() => {
 		window.tnc.calendar.setOptions({ eventMaxStack: 2 });
 		window.tnc.setItems(Array.from({ length: 4 }, (_, index) => ({
@@ -35,6 +31,41 @@ test("hosts can reserve readable collision columns and widths shrink after incre
 	await expect.poll(() => grid.evaluate((element) => element.style.getPropertyValue("--tnc-collision-columns"))).toBe("2");
 	await grid.locator(".tnc-more--stack").click();
 	await expect(page.locator(".tnc-popover .tnc-item")).toHaveCount(4);
+});
+
+test("overflow clamps to the viewport on resize and Today reveals its day", async ({ page }) => {
+	await open(page, "view=timeGridWeek&date=2026-10-21");
+	await page.addStyleTag({ content: ".tnc-tg { --tnc-col-min: 128px; }" });
+	await page.evaluate(() => window.tnc.setItems(Array.from({ length: 20 }, (_, index) => ({
+		id: `overflow-${index}`, title: `Appointment ${index + 1} with a readable full title`,
+		start: "2026-10-21T10:00:00", end: "2026-10-21T11:00:00", data: { kind: "task" },
+	}))));
+	await page.locator(".tnc-more--collision").click();
+	await page.setViewportSize({ width: 440, height: 800 });
+	const popover = page.locator(".tnc-popover");
+	await expect.poll(() => popover.evaluate((element) => {
+		const bounds = element.getBoundingClientRect();
+		return bounds.left >= 0 && bounds.right <= innerWidth && bounds.bottom <= innerHeight;
+	})).toBe(true);
+	await expect(popover.locator(".tnc-popover-close")).toBeInViewport();
+	expect(await popover.locator(".tnc-popover-body").evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+	await page.keyboard.press("Tab");
+	await expect(popover.locator(".tnc-popover-title")).toBeFocused();
+	await page.keyboard.press("Tab");
+	await expect(popover.locator(".tnc-popover-close")).toBeFocused();
+	await page.keyboard.press("End");
+	await expect(popover.locator(".tnc-item").last()).toBeFocused();
+	await expect(popover.locator(".tnc-item").last()).toBeInViewport();
+	await page.keyboard.press("Home");
+	await expect(popover.locator(".tnc-item").first()).toBeFocused();
+	await page.keyboard.press("Escape");
+	await expect(page.locator(".tnc-more--collision")).toBeFocused();
+	await page.locator(".tnc-btn-today").click();
+	await expect(page.locator('.tnc-dh[data-date="2026-10-21"]')).toBeInViewport();
+	const days = page.locator(".tnc-tg-day-navigation");
+	await expect(days).toBeVisible();
+	await days.getByRole("button").last().click();
+	await expect(page.locator(".tnc-dh").last()).toBeInViewport();
 });
 
 test("view names become a select when the toolbar runs out of room", async ({ page }) => {
