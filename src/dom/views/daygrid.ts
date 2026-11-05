@@ -243,19 +243,27 @@ export class DayGridView<D> implements View {
 			});
 		}
 		w.pool.end();
-		w.more.replaceChildren();
+		const existing = new Map(Array.from(w.more.children, element => [element.getAttribute("data-day"), element as HTMLButtonElement]));
 		hidden.forEach((items, col) => {
 			if (!items.length) return;
 			const day = w.days[col]!;
-			const link = h(ctx.doc, "button", "tnc-more", { type: "button", "aria-haspopup": "dialog" }, ctx.text.more(items.length));
+			const key = String(day);
+			let link = existing.get(key);
+			if (!link) {
+				link = h(ctx.doc, "button", "tnc-more", { type: "button", "aria-haspopup": "dialog", "data-day": key });
+				const anchor = link;
+				link.addEventListener("click", (ev) => ctx.openMore(day, anchor, ev));
+				w.more.append(link);
+			}
+			existing.delete(key);
+			link.textContent = ctx.text.more(items.length);
 			setStyle(link, {
 				left: `calc(${pct(col / n)} + 2px)`,
 				width: `calc(${pct(1 / n)} - 4px)`,
 				top: `calc(var(--tnc-dg-top-h) + ${visible(col)} * (var(--tnc-bar-h) + ${BAR_GAP}px))`,
 			});
-			link.addEventListener("click", (ev) => ctx.openMore(day, link, ev));
-			w.more.append(link);
 		});
+		for (const link of existing.values()) link.remove();
 		// Height the tallest cell needs: its bars, plus the "+N more" link at its real height.
 		const step = this.barPx + BAR_GAP;
 		let need = maxLevel >= 0 ? (maxLevel + 1) * step - BAR_GAP : 0;

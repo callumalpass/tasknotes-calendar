@@ -1,6 +1,41 @@
 import { expect, test } from "@playwright/test";
 import { open } from "./helpers";
 
+test("month overflow retains its focus anchor across item refreshes", async ({ page }) => {
+	await open(page, "view=dayGridMonth&date=2026-10-21");
+	await page.evaluate(() => {
+		window.tnc.calendar.setOptions({ dayMaxEvents: 2 });
+		window.tnc.setItems(Array.from({ length: 6 }, (_, index) => ({
+			id: `month-${index}`, title: `Month appointment ${index + 1}`,
+			start: "2026-10-21", data: { kind: "task" },
+		})));
+	});
+	const trigger = page.locator(".tnc-dg .tnc-more").first();
+	await trigger.click();
+	await expect(page.locator(".tnc-popover")).toBeVisible();
+	await page.evaluate(() => window.tnc.setItems(window.tnc.items().map(item => ({ ...item, title: `${item.title} refreshed` }))));
+	await expect(page.locator(".tnc-popover .tnc-item").first()).toContainText("refreshed");
+	await page.keyboard.press("Escape");
+	await expect(page.locator(".tnc-popover")).toHaveCount(0);
+	await expect(trigger).toBeFocused();
+});
+
+test("explicit stack limits measure only the columns actually displayed", async ({ page }) => {
+	await open(page, "view=timeGridDay&date=2026-10-21");
+	await page.addStyleTag({ content: ".tnc { width: 375px; }" });
+	await page.evaluate(() => {
+		window.tnc.calendar.setOptions({ eventMaxStack: 2, slotEventOverlap: false });
+		window.tnc.setItems(Array.from({ length: 3 }, (_, index) => ({
+			id: `legacy-${index}`, title: `Legacy appointment ${index + 1}`,
+			start: "2026-10-21T10:00:00", end: "2026-10-21T11:00:00", data: { kind: "task" },
+		})));
+	});
+	await expect(page.locator(".tnc-tg .tnc-item:visible")).toHaveCount(1);
+	await expect(page.locator(".tnc-more--stack")).toHaveText("+2");
+	await page.locator(".tnc-more--stack").click();
+	await expect(page.locator(".tnc-popover .tnc-item")).toHaveCount(3);
+});
+
 test("busy days collapse into readable stacks without widening the week", async ({ page }) => {
 	await open(page, "view=timeGridWeek&date=2026-10-21");
 	await page.addStyleTag({ content: ".tnc-tg { --tnc-col-min: 128px; }" });
@@ -8,9 +43,9 @@ test("busy days collapse into readable stacks without widening the week", async 
 		window.tnc.calendar.setOptions({ eventMaxStack: 0, slotEventOverlap: false });
 		window.tnc.setItems([...Array.from({ length: 4 }, (_, index) => ({
 			id: `collision-${index}`, title: `Readable appointment ${index + 1}`,
-			start: "2026-10-21T10:00:00", end: "2026-10-21T11:00:00", data: { kind: "task" },
-		})), { id: "morning", title: "Unrelated morning appointment", start: "2026-10-21T08:00:00", end: "2026-10-21T08:30:00", data: { kind: "task" } },
-		{ id: "all-day", title: "Unrelated all-day task", start: "2026-10-21", data: { kind: "task" } }]);
+			start: "2026-10-21T10:00:00", end: "2026-10-21T11:00:00", data: { kind: "task" as const },
+		})), { id: "morning", title: "Unrelated morning appointment", start: "2026-10-21T08:00:00", end: "2026-10-21T08:30:00", data: { kind: "task" as const } },
+		{ id: "all-day", title: "Unrelated all-day task", start: "2026-10-21", data: { kind: "task" as const } }]);
 	});
 	const grid = page.locator(".tnc-tg");
 	await expect.poll(() => grid.evaluate((element) => element.style.getPropertyValue("--tnc-collision-columns"))).toBe("4");
