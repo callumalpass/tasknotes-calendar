@@ -69,7 +69,14 @@ to 00:00–24:00 in 30-minute slots, initially scrolled to 08:00.
 `text` supplies translated labels; `itemContent` and related hooks supply
 custom DOM. The exported `CalendarOptions<D>` type documents the full API.
 
+`toolbar.viewDisplay` defaults to `"auto"`: full view-name buttons become a
+native select when the toolbar cannot fit them. Use `"buttons"` or `"select"`
+to choose a fixed presentation. The select uses the same translated view names
+and changes views through the same navigation lifecycle as the buttons.
+
 ### Month and list
+
+- `listEmptyContent()` may return a host-owned DOM node for an empty list, such as an explanation and recovery action. The default translated empty message remains when omitted. The node is removed when the list gains items.
 
 - `monthDisplay: "dots"` draws every item in a month cell as a small dot (`--tnc-dot-size`, `--tnc-dot-gap`) that wraps across the cell, with "+N" when they do not fit; `dayMaxEvents` caps the dots (`false` lets cells grow). The day cell is the tap target: dots ignore the pointer, are `aria-hidden`, get no content hook, and the cell is labelled "<date>, N items" (`text.itemCount`). Items in dots have `variant: "indicator"`; colour them with `color` or `itemDidMount` setting `--tnc-c`.
 - **"+N more" height**: day rows (and the time grid's all-day row) make room for the link at its rendered height, so a host may give it a 44px touch target (`--tnc-more-h`, or any min-height) without overflowing the row.
@@ -104,6 +111,30 @@ custom DOM. The exported `CalendarOptions<D>` type documents the full API.
 
 Set `--tnc-theme-*` variables on the host (they inherit into the calendar)
 or on `.tnc`. The stylesheet is scoped to `.tnc` and does not inject CSS.
+
+Time grids collapse crowded collision groups into labelled, expandable stacks
+instead of widening every day. `--tnc-event-min-width` sets the readable event
+width in pixels (default 128). Keep the day minimum independent of collisions:
+
+```css
+.my-calendar .tnc-tg {
+  --tnc-col-min: 128px;
+  --tnc-event-min-width: 128px;
+}
+```
+
+When the day minimums exceed a narrow viewport, persistent day buttons reveal
+offscreen dates, and Today reveals the current day. Headers, all-day rows and
+timed columns stay aligned. `--tnc-collision-columns` remains available as
+diagnostic metadata (respecting `eventMaxStack`), not a week-wide width multiplier.
+Overflow dialogs clamp to the visible calendar and viewport, scroll vertically,
+and support Tab, arrow keys, Home, End and Escape. Timed items dragged from
+overflow start at their actual time rather than the slot underneath the dialog.
+
+Timed events also expose `--tnc-event-readable-width`, the percentage of their
+width not covered by the next collision column. Hosts can use it as the
+`max-width` of `.tnc-item-main` to keep text readable while preserving the user's
+overlapping event backgrounds. It is `100%` for non-overlapping placements.
 
 ```css
 .my-calendar {
