@@ -45,7 +45,7 @@ export class DayGridView<D> implements View {
 	private morePx = 20;
 	private topPx = 24;
 	private lastHeights = "";
-	private readonly dotsMode: boolean;
+	private dotsMode: boolean;
 
 	constructor(private readonly ctx: ViewContext<D>) {
 		const { doc, opts, days } = ctx;
@@ -105,15 +105,13 @@ export class DayGridView<D> implements View {
 			layer.append(content);
 			row.append(dates, layer);
 			this.grid.append(row);
-			const dots = this.dotsMode
-				? cells.map((cell) => {
-						const box = h(doc, "div", "tnc-dg-dots", { "aria-hidden": "true" });
-						if (opts.dayMaxEvents === false) box.classList.add("is-unlimited");
-						const count = h(doc, "span", "tnc-dg-dots-more");
-						cell.append(box);
-						return { box, pool: new ItemPool(ctx, box), count };
-					})
-				: null;
+			const dots = cells.map((cell) => {
+				const box = h(doc, "div", "tnc-dg-dots", { "aria-hidden": "true" });
+				if (opts.dayMaxEvents === false) box.classList.add("is-unlimited");
+				const count = h(doc, "span", "tnc-dg-dots-more");
+				cell.append(box);
+				return { box, pool: new ItemPool(ctx, box), count };
+			});
 			this.weeks.push({ days: wdays, row, cells, layer, sel, more, pool: new ItemPool(ctx, content), dots });
 		}
 		this.scroller.append(this.grid);
@@ -122,7 +120,7 @@ export class DayGridView<D> implements View {
 
 		const RO = (ctx.win as Window & { ResizeObserver?: typeof ResizeObserver }).ResizeObserver;
 		// Measured limits follow the cell size: row heights for bars, and the width too for dots.
-		if (RO && (opts.dayMaxEvents === true || (this.dotsMode && opts.dayMaxEvents !== false))) {
+		if (RO) {
 			this.resizeObs = new RO(() => {
 				if (this.sizeKey() !== this.lastHeights) this.render(null);
 			});
@@ -145,14 +143,35 @@ export class DayGridView<D> implements View {
 
 	render(_change: StoreChange | null): void {
 		const { ctx } = this;
+		this.dotsMode = ctx.opts.monthDisplay !== "full" || this.grid.clientWidth / this.daysPerWeek() < 72;
+		this.el.classList.toggle("tnc-dg--dots", this.dotsMode);
+		this.el.classList.toggle("tnc-dg--compact", this.dotsMode && ctx.opts.monthDisplay === "full");
+		this.el.classList.toggle("tnc-dg--chips", ctx.opts.monthDisplay === "chips" && this.weeks[0]!.dots![0]!.box.clientHeight >= 44);
 		const cs = ctx.win.getComputedStyle(this.el);
 		this.barPx = px(cs, "--tnc-bar-h", 20);
 		this.topPx = this.weeks[0]?.cells[0]?.querySelector<HTMLElement>(".tnc-dg-top")?.offsetHeight || px(cs, "--tnc-dg-top-h", 24);
 		this.morePx = this.measureMore(cs);
 		this.lastHeights = this.sizeKey();
 		for (const w of this.weeks) {
-			if (w.dots) this.renderDots(w);
-			else this.renderWeek(w);
+			for (const cell of w.cells) {
+				if (this.dotsMode) cell.tabIndex = 0;
+				else cell.removeAttribute("tabindex");
+				if (this.dotsMode && ctx.opts.monthDisplay === "full") cell.setAttribute("aria-haspopup", "dialog");
+				else cell.removeAttribute("aria-haspopup");
+			}
+			for (const cell of w.dots!) cell.box.hidden = !this.dotsMode;
+			if (this.dotsMode) {
+				w.pool.begin();
+				w.pool.end();
+				w.more.replaceChildren();
+				this.renderDots(w);
+			} else {
+				for (const cell of w.dots!) {
+					cell.pool.begin();
+					cell.pool.end();
+				}
+				this.renderWeek(w);
+			}
 		}
 	}
 
@@ -295,7 +314,7 @@ export class DayGridView<D> implements View {
 		const { dayMaxEvents } = ctx.opts;
 		const first = w.dots![0]!.box;
 		const cs = ctx.win.getComputedStyle(first);
-		const chips = ctx.opts.monthDisplay === "chips";
+		const chips = this.el.classList.contains("tnc-dg--chips");
 		const size = chips ? px(cs, "--tnc-chip-h", 14) : px(cs, "--tnc-dot-size", 8);
 		const gap = px(cs, "--tnc-dot-gap", 3);
 		const step = size + gap;
@@ -309,7 +328,7 @@ export class DayGridView<D> implements View {
 			const cell = w.dots![i]!;
 			const items = this.itemsOn(day);
 			// "+N" takes about two dot slots when the cell is full.
-			const shown = items.length <= cap ? items.length : cap >= fits ? Math.max(0, cap - (chips ? 1 : 2)) : cap;
+			const shown = items.length <= cap ? items.length : cap >= fits ? Math.max(1, cap - (chips ? 1 : 2)) : Math.max(1, cap);
 			cell.pool.begin();
 			const els = items
 				.slice(0, shown)

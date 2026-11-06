@@ -1318,6 +1318,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	private readonly onPointerDown = (ev: PointerEvent) => {
 		if (ev.button !== 0 || this.session) return;
 		const target = ev.target as Element;
+		if (target.closest(".tnc-dg--compact .tnc-dg-day")) return;
 		if (target.closest("button, a, input, select, textarea, .tnc-toolbar, .tnc-port, [data-tnc-no-drag]")) {
 			if (!target.closest(".tnc-item")) return;
 			if (target.closest(".tnc-port, [data-tnc-no-drag], input, select, textarea")) return;
@@ -1350,8 +1351,10 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 			y0: ev.clientY,
 			active: false,
 			origin,
-			grab: overflowOrigin && this.current instanceof TimeGridView && !origin?.allDay
-				? { kind: "time", day: overflowOrigin.day, minute: overflowOrigin.minute }
+			grab: overflowOrigin
+				? this.current instanceof TimeGridView && !origin?.allDay
+					? { kind: "time", day: overflowOrigin.day, minute: overflowOrigin.minute }
+					: { kind: "day", day: this.meta.get(itemEl!)!.day }
 				: this.current?.hit(ev.clientX, ev.clientY) ?? null,
 			proposal: null,
 			denied: false,
@@ -1380,6 +1383,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 
 	private activate(s: Session<D>): void {
 		s.active = true;
+		if (s.lastEvent) this.leaveHover(s.lastEvent);
 		if (s.timer !== null) this.win.clearTimeout(s.timer);
 		s.timer = null;
 		if (s.origin) {
@@ -1971,6 +1975,12 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	};
 
 	private readonly onClick = (ev: MouseEvent) => {
+		const compactDay = (ev.target as Element).closest?.<HTMLElement>(".tnc-dg--compact .tnc-dg-day");
+		if (compactDay && this.root.contains(compactDay) && !(ev.target as Element).closest(".tnc-navlink")) {
+			const day = parseDay(compactDay.dataset.date ?? "");
+			if (day !== null) this.openMore(day, compactDay, ev);
+			return;
+		}
 		// Year days are buttons, which pointer sessions skip; their click covers
 		// mouse, touch and keyboard alike.
 		const yearDay = (ev.target as Element).closest?.<HTMLElement>(".tnc-ym-day");
@@ -2069,7 +2079,8 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 			const day = parseDay(target.dataset.date ?? "");
 			if (day !== null) {
 				ev.preventDefault();
-				this.clickSlot({ kind: "day", day }, ev, true);
+				if (target.closest(".tnc-dg--compact")) this.openMore(day, target, ev);
+				else this.clickSlot({ kind: "day", day }, ev, true);
 			}
 			return;
 		}

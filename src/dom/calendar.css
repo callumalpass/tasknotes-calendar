@@ -293,6 +293,11 @@
 .tnc-item--timed.is-short .tnc-item-time {
 	flex: none;
 }
+@container (max-height: 50px) and (max-width: 239px) {
+	.tnc-item--timed .tnc-item-time {
+		display: none;
+	}
+}
 @container (max-width: 109px) {
 	.tnc-item--timed .tnc-item-time-end {
 		display: none;
@@ -896,6 +901,9 @@
 	gap: var(--tnc-dot-gap);
 	overflow: hidden;
 	pointer-events: none;
+}
+.tnc-dg-dots[hidden] {
+	display: none;
 }
 .tnc-dg-dots.is-unlimited {
 	position: static;
