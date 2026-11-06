@@ -353,6 +353,7 @@ export interface CalendarOptions<D = unknown> {
 	firstDay: number | undefined;
 	/** undefined = locale default. */
 	hour12: boolean | undefined;
+	formatTime?: (minute: number) => string;
 	weekNumbers: boolean;
 	weekends: boolean;
 	hiddenDays: number[];
@@ -376,6 +377,7 @@ export interface CalendarOptions<D = unknown> {
 	nowIndicator: boolean;
 	selectMirror: boolean;
 	slotEventOverlap: boolean;
+	overlapStackThreshold?: number;
 	/** Minimum item height in px in time grids. */
 	eventMinHeight: number;
 	/** Max side-by-side items in a time-grid cluster before "+N". 0 = unlimited. */
@@ -537,6 +539,7 @@ export const LAYOUT_KEYS = new Set<keyof CalendarOptions>([
 	"locale",
 	"firstDay",
 	"hour12",
+	"formatTime",
 	"weekNumbers",
 	"weekends",
 	"hiddenDays",
@@ -553,6 +556,7 @@ export const LAYOUT_KEYS = new Set<keyof CalendarOptions>([
 	"expandRows",
 	"nowIndicator",
 	"slotEventOverlap",
+	"overlapStackThreshold",
 	"eventMinHeight",
 	"eventMaxStack",
 	"dayMaxEvents",
