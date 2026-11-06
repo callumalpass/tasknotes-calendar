@@ -6,7 +6,7 @@ export class Formatter {
 	readonly locale: string | undefined;
 	readonly hour12: boolean;
 
-	constructor(locale: string | undefined, hour12: boolean | undefined) {
+	constructor(locale: string | undefined, hour12: boolean | undefined, private readonly formatTime?: (minute: number) => string) {
 		this.locale = locale;
 		const probe = new Intl.DateTimeFormat(locale, { hour: "numeric" }).resolvedOptions();
 		this.hour12 = hour12 ?? (probe.hour12 === true || probe.hourCycle === "h12" || probe.hourCycle === "h11");
@@ -73,6 +73,7 @@ export class Formatter {
 	/** Wall-clock minutes to a label. `compact` drops ":00" in 12-hour formats ("9am"). */
 	time(minute: number, compact = false): string {
 		const m = ((Math.round(minute) % 1440) + 1440) % 1440;
+		if (this.formatTime) return this.formatTime(m);
 		const date = new Date(Date.UTC(2000, 0, 1, Math.floor(m / 60), m % 60));
 		if (this.hour12) {
 			const parts = this.fmt("t12", { hour: "numeric", minute: "2-digit", hour12: true }).formatToParts(date);

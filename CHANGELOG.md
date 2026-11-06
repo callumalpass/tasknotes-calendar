@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Agenda strip paging moves the list to the focused day; scrollbar and keyboard scrolling update the date highlight after a day is picked. Activity dots show up to three appointments in their configured colours.
+- Hosts can supply one wall-clock `formatTime` callback for event, stack, selection, accessibility and slot labels.
+
 ## 0.1.9
 
 ### Added

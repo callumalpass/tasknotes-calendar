@@ -187,7 +187,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		this.win = (this.doc.defaultView ?? (globalThis as unknown as Window));
 		this.opts = { ...defaultOptions<D>(), ...options };
 		this.zone = getTimeZone(this.opts.timeZone);
-		this.fmt = new Formatter(this.opts.locale, this.opts.hour12);
+		this.fmt = new Formatter(this.opts.locale, this.opts.hour12, this.opts.formatTime);
 		this.text = this.resolveText();
 		this.order = parseOrder(this.opts.eventOrder);
 		this.store = new ItemStore<D>(this.zone, {
@@ -317,7 +317,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 				defaultAllDayDays: this.opts.defaultAllDayDays,
 			});
 		}
-		if (has("locale") || has("hour12")) this.fmt = new Formatter(this.opts.locale, this.opts.hour12);
+		if (has("locale") || has("hour12") || has("formatTime")) this.fmt = new Formatter(this.opts.locale, this.opts.hour12, this.opts.formatTime);
 		if (has("text") || has("locale")) this.text = this.resolveText();
 		if (has("eventOrder")) this.order = parseOrder(this.opts.eventOrder);
 		if (has("date")) this.anchor = this.toDay(this.opts.date) ?? this.anchor;
@@ -885,7 +885,9 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		this.root.classList.add("tnc--has-strip");
 		const { startDay, endDay } = this.view.range;
 		if (!this.strip) {
-			const strip = new DateStrip(this, (day, ev) => this.pickStripDay(day, ev), startDay, () => this.stripShown());
+			const strip = new DateStrip(this, (day, ev) => this.pickStripDay(day, ev), startDay, () => this.stripShown(), day => {
+				if (this.agendaList()) this.showListDay(day);
+			});
 			this.strip = strip;
 			this.root.insertBefore(strip.el, this.viewHost);
 			const RO = (this.win as Window & { ResizeObserver?: typeof ResizeObserver }).ResizeObserver;

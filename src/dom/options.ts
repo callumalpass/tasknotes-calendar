@@ -353,6 +353,7 @@ export interface CalendarOptions<D = unknown> {
 	firstDay: number | undefined;
 	/** undefined = locale default. */
 	hour12: boolean | undefined;
+	formatTime?: (minute: number) => string;
 	weekNumbers: boolean;
 	weekends: boolean;
 	hiddenDays: number[];
@@ -537,6 +538,7 @@ export const LAYOUT_KEYS = new Set<keyof CalendarOptions>([
 	"locale",
 	"firstDay",
 	"hour12",
+	"formatTime",
 	"weekNumbers",
 	"weekends",
 	"hiddenDays",

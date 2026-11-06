@@ -3,6 +3,13 @@ import { dayFromYMD } from "../../src/core/date";
 import { Formatter } from "../../src/dom/format";
 
 describe("Formatter", () => {
+	it("uses the host time formatter in compact labels, ranges and slot labels", () => {
+		const formatter = new Formatter("en-US", true, minute => `clock:${minute}`);
+		expect(formatter.time(570)).toBe("clock:570");
+		expect(formatter.time(570, true)).toBe("clock:570");
+		expect(formatter.slotLabel(570)).toBe("clock:570");
+		expect(formatter.time(1440)).toBe("clock:0");
+	});
 	it("formats compact 12-hour and 24-hour times", () => {
 		const en = new Formatter("en-US", true);
 		expect(en.time(540, true)).toBe("9am");

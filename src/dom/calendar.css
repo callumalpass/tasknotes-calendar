@@ -1200,6 +1200,12 @@
 	font-weight: 650;
 	line-height: 1;
 }
+.tnc-strip-dots {
+	display: flex;
+	justify-content: center;
+	gap: 2px;
+	min-height: 5px;
+}
 .tnc-strip-dot {
 	width: 5px;
 	height: 5px;
