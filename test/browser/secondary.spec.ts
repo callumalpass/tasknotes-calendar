@@ -17,7 +17,7 @@ test("empty agenda preserves host recovery alongside per-day creation", async ({
 	await expect(page.getByRole("button", { name: "Clear filters" })).toHaveCount(0);
 });
 
-test("held collision drags paint each task once and Escape restores the event exactly", async ({ page }) => {
+test("held collision drags keep one interactive task plus a dim source and Escape restores the event exactly", async ({ page }) => {
 	await open(page, "view=timeGridDay&date=2026-10-21");
 	await page.evaluate(() => window.tnc.setItems(["gesture", "peer-one", "peer-two"].map(id => ({ id, title: `Review ${id}`, start: "2026-10-21T10:00", end: "2026-10-21T11:00" }))));
 	const event = page.locator('.tnc-item[data-id="gesture"]');
@@ -26,12 +26,13 @@ test("held collision drags paint each task once and Escape restores the event ex
 	await page.mouse.move(pointer.x, pointer.y);
 	await page.mouse.down();
 	await page.mouse.move(pointer.x, pointer.y + 60, { steps: 10 });
-	const origin = page.locator(".tnc-drag-origin");
-	await page.waitForTimeout(1200);
-	await expect(origin).toHaveCount(0);
-	await expect(page.locator('.tnc-item--timed')).toHaveCount(3);
+	const origin = page.locator(".tnc-drag-source");
+	await expect(origin).toHaveCount(1);
+	await expect(origin).toHaveAttribute("inert", "");
+	expect(await origin.boundingBox()).toEqual(before);
+	await expect(page.locator('.tnc-item--timed:not(.tnc-drag-source)')).toHaveCount(3);
 	await expect(event).toHaveClass(/is-dragging/);
-	const titles = await page.locator('.tnc-item--timed .tnc-item-title').evaluateAll(elements => elements.map(element => {
+	const titles = await page.locator('.tnc-item--timed:not(.tnc-drag-source) .tnc-item-title').evaluateAll(elements => elements.map(element => {
 		const range = document.createRange();
 		range.selectNodeContents(element);
 		const bounds = range.getBoundingClientRect();

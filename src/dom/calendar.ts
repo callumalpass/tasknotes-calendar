@@ -132,6 +132,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	slot = { min: 0, max: MINUTES_PER_DAY, duration: 30, snap: 30, scroll: 480 };
 	draggingId: string | null = null;
 	private listDragPreview: { element: HTMLElement; offsetX: number; offsetY: number; width: number; height: number } | null = null;
+	private dragSources: HTMLElement[] = [];
 	private dragScrollFrame: number | null = null;
 	private readonly dragScrollOrigins = new Map<Element, { top: number; left: number }>();
 	private readonly itemWriteStates = new Map<string, "pending" | "failed" | "changed">();
@@ -1394,6 +1395,20 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		if (s.origin) {
 			this.draggingId = s.origin.id;
 			for (const el of this.elementsFor(s.origin.id)) {
+				if (this.opts.view !== "list" && s.mode === "move") {
+					const source = el.cloneNode(true) as HTMLElement;
+					source.classList.remove("is-selected");
+					source.classList.add("tnc-drag-source");
+					source.setAttribute("aria-hidden", "true");
+					source.inert = true;
+					for (const node of [source, ...source.querySelectorAll<HTMLElement>("[id], [data-id], [data-task-path]")]) {
+						node.removeAttribute("id");
+						node.removeAttribute("data-id");
+						node.removeAttribute("data-task-path");
+					}
+					el.before(source);
+					this.dragSources.push(source);
+				}
 				if (this.opts.view === "list" && !this.listDragPreview && s.mode === "move") {
 					const bounds = el.getBoundingClientRect();
 					const preview = el.cloneNode(true) as HTMLElement;
@@ -1845,6 +1860,8 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		this.session = null;
 		this.listDragPreview?.element.remove();
 		this.listDragPreview = null;
+		for (const source of this.dragSources) source.remove();
+		this.dragSources = [];
 		if (s.timer !== null) this.win.clearTimeout(s.timer);
 		this.listenDoc(false);
 		this.root.classList.remove(
