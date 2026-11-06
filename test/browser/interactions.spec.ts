@@ -142,6 +142,23 @@ test.describe("other views", () => {
 		await expect.poll(() => lastLog(page, "drop")).toBe("drop span-1 2026-10-20 → 2026-10-23 (all-day)");
 	});
 
+	test("month: narrow indicators and overflow counts retain a labelled day disclosure", async ({ page }) => {
+		await page.setViewportSize({ width: 400, height: 800 });
+		await open(page, "view=dayGridMonth");
+		await page.addStyleTag({ content: "#side{display:none}" });
+		await page.evaluate(() => window.tnc.setItems(Array.from({ length: 100 }, (_, index) => ({ id: `overflow-${index}`, title: `Task ${index}`, start: "2026-10-21" }))));
+		const day = page.locator('.tnc-dg-day[data-date="2026-10-21"]');
+		await expect(day).toHaveAccessibleName(/100 items/);
+		await expect(day.locator(".tnc-item--indicator").first()).toBeVisible();
+		const more = day.locator(".tnc-dg-dots-more");
+		await expect(more).toHaveText(/^\+\d+$/);
+		expect(await day.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+		await day.click({ position: { x: 10, y: 40 } });
+		await expect(page.locator(".tnc-popover")).toBeVisible();
+		await page.keyboard.press("Escape");
+		await expect(day).toBeFocused();
+	});
+
 	test("month: rows make room for a tall '+N more' link", async ({ page }) => {
 		await open(page, "view=dayGridMonth");
 		await page.addStyleTag({ content: ".tnc { --tnc-more-h: 44px; }" });
@@ -330,23 +347,22 @@ test("works in a popout window", async ({ page }) => {
 
 test("@touch month: a long-press drag previews the item in the target cell", async ({ page }) => {
 	await open(page, "view=dayGridMonth");
-	const el = item(page, "span-1"); // Mon 19 – Wed 21
+	await page.locator('.tnc-dg-day[data-date="2026-10-19"]').click({ position: { x: 8, y: 30 } });
+	const el = page.locator('.tnc-popover .tnc-item[data-id="span-1"]');
 	const box = (await el.boundingBox())!;
-	const source = (await page.locator('.tnc-dg-day[data-date="2026-10-19"]').boundingBox())!;
 	const target = (await page.locator('.tnc-dg-day[data-date="2026-10-20"]').boundingBox())!;
 	const cdp = await page.context().newCDPSession(page);
 	const touch = (type: "touchStart" | "touchMove" | "touchEnd", x: number, y: number) =>
 		cdp.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" ? [] : [{ x, y }] });
 	const x = box.x + 6;
 	const y = box.y + box.height / 2;
-	const dx = target.x - source.x;
 	await touch("touchStart", x, y);
 	await page.waitForTimeout(450);
-	for (let i = 1; i <= 6; i++) await touch("touchMove", x + (dx * i) / 6, y);
-	const mid = (await el.boundingBox())!;
-	expect(mid.x - box.x).toBeCloseTo(dx, -1);
+	for (let step = 1; step <= 6; step++) await touch("touchMove", target.x + 8, target.y + 30);
+	await expect(page.locator(".tnc")).toHaveClass(/tnc-dragging/);
+	await expect(page.locator('.tnc-dg-day[data-date="2026-10-20"] .tnc-item[data-id="span-1"]')).toBeVisible();
 	expect(await lastLog(page, "drop")).toBeUndefined();
-	await touch("touchEnd", x + dx, y);
+	await touch("touchEnd", target.x + 8, target.y + 30);
 	await expect.poll(() => lastLog(page, "drop")).toBe("drop span-1 2026-10-20 → 2026-10-23 (all-day)");
 });
 

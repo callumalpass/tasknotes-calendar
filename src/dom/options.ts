@@ -19,7 +19,7 @@ export interface ViewInfo {
 	title: string;
 	/**
 	 * The days whose items the calendar can show: `range`, extended to the
-	 * end of the days a date strip is showing so their dots are right. Load
+	 * full window of days a date strip is showing so their dots are right. Load
 	 * items for this range; `onRangeChange` fires when it changes too.
 	 */
 	dataRange: DateRange;
@@ -345,7 +345,7 @@ export interface CalendarOptions<D = unknown> {
 	 * the tap target: dots ignore the pointer and are hidden from assistive
 	 * technology, and the cell is labelled with its item count.
 	 */
-	monthDisplay: "full" | "dots";
+	monthDisplay: "full" | "dots" | "chips";
 	/** "local" or an IANA name. */
 	timeZone: string;
 	locale: string | undefined;

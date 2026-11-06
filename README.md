@@ -76,6 +76,9 @@ and changes views through the same navigation lifecycle as the buttons.
 
 ### Month and list
 
+- `monthDisplay: "chips"` uses compact filled title strips instead of dots, clipped without ellipses, with a counted overflow row. Set `--tnc-chip-h` to size the rows. Like dots, chips are passive summaries: the whole day cell is the keyboard and pointer target, and the host can open a full selected-day list through `onDateClick`.
+- `gotoDate()` within the displayed month updates the navigation anchor without rebuilding its cells, preserving keyboard focus when a host selects a day. A subsequent view switch uses that selected date.
+
 - `listEmptyContent()` may return a host-owned DOM node for an empty list, such as an explanation and recovery action. The default translated empty message remains when omitted. The node is removed when the list gains items.
 
 - `monthDisplay: "dots"` draws every item in a month cell as a small dot (`--tnc-dot-size`, `--tnc-dot-gap`) that wraps across the cell, with "+N" when they do not fit; `dayMaxEvents` caps the dots (`false` lets cells grow). The day cell is the tap target: dots ignore the pointer, are `aria-hidden`, get no content hook, and the cell is labelled "<date>, N items" (`text.itemCount`). Items in dots have `variant: "indicator"`; colour them with `color` or `itemDidMount` setting `--tnc-c`.
@@ -154,6 +157,9 @@ overlapping event backgrounds. It is `100%` for non-overlapping placements.
 Additional semantic colours: `--tnc-theme-now`, `--tnc-theme-warn`,
 `--tnc-theme-ok`, `--tnc-theme-amber`. Item colours come from `color`,
 `backgroundColor`, `borderColor` and `textColor`.
+Set an item's `timeDisplay: "start"` for deadlines or other point-in-time markers:
+visible and accessible labels show only its exact start time. This presentation
+option does not alter the item's stored dates, layout duration or hit area.
 Override sizing tokens such as `--tnc-font-size`, `--tnc-small`,
 `--tnc-radius`, `--tnc-bar-h`, `--tnc-more-h`, `--tnc-dot-size` and
 `--tnc-dot-gap` directly on `.tnc` (not just its ancestor).

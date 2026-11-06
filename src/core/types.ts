@@ -29,6 +29,7 @@ export interface CalendarItem<D = unknown> {
 	backgroundColor?: string;
 	borderColor?: string;
 	textColor?: string;
+	timeDisplay?: "start" | "range";
 	className?: string | string[];
 	/** Host-managed temporary placement: inert, mirror-styled and never hidden by event limits. */
 	preview?: boolean;

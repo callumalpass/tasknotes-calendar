@@ -80,6 +80,7 @@ export class ListView<D> implements View {
 		const leadItems: NormalizedItem<D>[] = [];
 		const inLead = new Set<string>();
 		const keep = new Set<Day>();
+		let itemCount = 0;
 		let prev: HTMLElement | null = null;
 		for (const day of days) {
 			let items = this.itemsOn(day);
@@ -93,7 +94,7 @@ export class ListView<D> implements View {
 					return false;
 				});
 			}
-			if (!items.length && !agenda) continue;
+			if (!items.length && !agenda && opts.listDayCount !== 1) continue;
 			keep.add(day);
 			let section = this.sections.get(day);
 			let pool = this.pools.get(day);
@@ -112,6 +113,7 @@ export class ListView<D> implements View {
 				this.pools.set(day, pool);
 			}
 			section.classList.toggle("is-empty", !items.length);
+			itemCount += items.length;
 			this.fill(pool, items, () => day);
 			if (prev ? prev.nextSibling !== section : this.body.firstChild !== section) {
 				if (prev) prev.after(section);
@@ -127,13 +129,14 @@ export class ListView<D> implements View {
 			this.sections.delete(day);
 		}
 		this.renderLead(leadItems);
-		let empty = this.body.querySelector<HTMLElement>(":scope > .tnc-list-empty");
-		if (!keep.size && !leadItems.length) {
+		let empty = this.body.querySelector<HTMLElement>(".tnc-list-empty");
+		if (!itemCount && !leadItems.length && (!agenda || opts.listEmptyContent)) {
 			if (!empty) {
 				empty = h(doc, "div", "tnc-list-empty", { role: "listitem" }, ctx.text.noItems);
 				const content = ctx.opts.listEmptyContent?.();
 				if (content) empty.replaceChildren(content);
-				this.body.append(empty);
+				if (this.sections.size === 1) this.sections.values().next().value!.append(empty);
+				else this.body.prepend(empty);
 			}
 		} else empty?.remove();
 		this.ctx.strip?.draw();
@@ -197,7 +200,7 @@ export class ListView<D> implements View {
 		if (!section) return;
 		// The strip may have just folded; its new height sets where the day lands.
 		this.ctx.strip?.measure();
-		section.scrollIntoView({ block: "start" });
+		this.scroller.scrollTop += section.getBoundingClientRect().top - this.scroller.getBoundingClientRect().top;
 		this.ctx.strip?.setFocus(day);
 		this.pinned = true;
 	}

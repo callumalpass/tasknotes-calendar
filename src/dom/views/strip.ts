@@ -54,8 +54,7 @@ export class DateStrip<D> {
 		head.append(this.title, this.todayBtn, prev, next, this.slot);
 		this.dows = h(doc, "div", "tnc-strip-dows", { "aria-hidden": "true" });
 		this.grid = h(doc, "div", "tnc-strip-grid", { role: "group" });
-		const handle = h(doc, "button", "tnc-strip-handle", { type: "button", tabindex: "-1", "aria-hidden": "true" });
-		handle.addEventListener("click", () => this.setExpanded(!this.expanded));
+		const handle = h(doc, "div", "tnc-strip-handle", { "aria-hidden": "true" });
 		this.el.append(head, this.dows, this.grid, handle);
 		this.grid.addEventListener("click", this.onClick);
 		this.grid.addEventListener("keydown", this.onKeyDown);

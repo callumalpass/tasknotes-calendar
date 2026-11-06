@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Collision stacks show a quiet count and a preview of their contents. Tracked-time titles never split words in the side lane, and adjacent timed events retain a visible boundary.
+- Calendar interaction colours and motion expose theme hooks. Keyboard focus, selected hover, touch, drag origin and preview, pending writes and rejected writes have distinct treatments; Escape removes the drag origin without changing data.
+- Dragging near a scroll edge reveals more of the calendar; cancellation restores the original scroll position. Empty agenda ranges retain host-provided filter recovery alongside per-day creation.
+- Agenda drag previews follow the pointer without shifting neighbouring rows. Releasing after Escape does not open the task underneath the cancelled drag.
+
 ## 0.1.7
 
 ### Added

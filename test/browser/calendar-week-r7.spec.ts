@@ -1,0 +1,35 @@
+import { expect, test } from "@playwright/test";
+import { open } from "./helpers";
+
+test("narrow full month keeps indicators on busy and quiet days and restores bars on resize", async ({ page }) => {
+	await page.setViewportSize({ width: 400, height: 700 });
+	await open(page, "view=dayGridMonth&date=2026-10-21");
+	await page.evaluate(() => {
+		window.tnc.calendar.setOptions({ monthDisplay: "full", dayMaxEvents: true });
+		window.tnc.setItems([
+			...Array.from({ length: 20 }, (_, index) => ({ id: `busy-${index}`, title: `Busy task ${index}`, start: "2026-10-21" })),
+			{ id: "quiet", title: "Quiet day task", start: "2026-10-22" },
+		]);
+	});
+	for (const date of ["2026-10-21", "2026-10-22"]) {
+		await expect(page.locator(`.tnc-dg-day[data-date="${date}"] .tnc-item--indicator`).first()).toBeVisible();
+	}
+	await expect(page.locator('.tnc-dg-day[data-date="2026-10-21"]')).toHaveAttribute("aria-label", /20/);
+	await page.setViewportSize({ width: 1400, height: 900 });
+	await expect(page.locator(".tnc-dg--dots")).toHaveCount(0);
+	await expect(page.locator('.tnc-item--bar[data-id="quiet"]')).toBeVisible();
+	await expect(page.locator(".tnc-item--indicator")).toHaveCount(0);
+});
+
+test("short narrow events give their title the time label's space without losing accessible times", async ({ page }) => {
+	await open(page, "view=timeGridWeek&date=2026-10-21");
+	await page.evaluate(() => window.tnc.setItems([
+		{ id: "short", title: "Daily standup with the design team", start: "2026-10-21T09:00", end: "2026-10-21T09:15" },
+	]));
+	const event = page.locator('.tnc-item[data-id="short"]');
+	await expect(event.locator(".tnc-item-time")).toBeHidden();
+	await expect(event).toHaveAttribute("aria-label", /09:00.*09:15/);
+	const titleWidth = await event.locator(".tnc-item-title").evaluate(element => element.getBoundingClientRect().width);
+	const eventWidth = await event.evaluate(element => element.getBoundingClientRect().width);
+	expect(titleWidth).toBeGreaterThan(eventWidth - 24);
+});

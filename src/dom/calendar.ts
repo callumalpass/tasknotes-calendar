@@ -131,6 +131,11 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	conflicts: Map<string, string[]> = new Map();
 	slot = { min: 0, max: MINUTES_PER_DAY, duration: 30, snap: 30, scroll: 480 };
 	draggingId: string | null = null;
+	private listDragPreview: { element: HTMLElement; offsetX: number; offsetY: number; width: number; height: number } | null = null;
+	private dragSources: HTMLElement[] = [];
+	private dragScrollFrame: number | null = null;
+	private readonly dragScrollOrigins = new Map<Element, { top: number; left: number }>();
+	private readonly itemWriteStates = new Map<string, "pending" | "failed" | "changed">();
 	dragRow: { id: string; rowId: string } | null = null;
 	strip: DateStrip<D> | null = null;
 	private stripSize: ResizeObserver | null = null;
@@ -145,6 +150,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	private session: Session<D> | null = null;
 	private selection: Selection | null = null;
 	private suppressClick = false;
+	private cancelledPointerId: number | null = null;
 	private selectedIds = new Set<string>();
 	private popover: { el: HTMLElement; pool: ItemPool<D>; anchor: HTMLElement; day: Day } | null = null;
 	private timer: number | null = null;
@@ -196,6 +202,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 				this.positionMore();
 			});
 			this.resizeObs.observe(this.root);
+			this.resizeObs.observe(this.toolbarEl);
 		}
 	}
 
@@ -342,7 +349,12 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	gotoDate(date: DateInput): void {
 		const day = this.toDay(date);
 		if (day === null) return;
+		const sameMonth = this.opts.view === "month" && startOfMonth(day) === startOfMonth(this.anchor);
 		this.anchor = day;
+		if (sameMonth) {
+			this.view = { ...this.view, anchor: day };
+			return;
+		}
 		this.rebuild(true);
 	}
 
@@ -509,7 +521,8 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		return out;
 	}
 
-	isEditable(n: NormalizedItem<D>, what: "start" | "duration"): boolean {
+	isEditable(n: NormalizedItem<D>, what: "start" | "duration", presentation = false): boolean {
+		if (!presentation && this.itemWriteStates.get(n.id) === "pending") return false;
 		if (n.id === EXTERNAL_ID || n.item.preview || this.opts.view === "year") return false;
 		// Agenda rows move between days; list rows have no length to resize.
 		if (this.opts.view === "list" && (!this.opts.listAgenda || what === "duration")) return false;
@@ -553,13 +566,14 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		if (preview || n.id === EXTERNAL_ID) el.classList.add("is-mirror");
 		if (this.conflicts.has(n.id)) el.classList.add("is-conflict");
 		const indicator = variant === "indicator";
-		if (!preview && !indicator && (this.isEditable(n, "start") || this.isEditable(n, "duration"))) el.classList.add("is-draggable");
+		if (!preview && !indicator && (this.isEditable(n, "start", true) || this.isEditable(n, "duration", true))) el.classList.add("is-draggable");
 		if (this.draggingId === n.id) el.classList.add("is-dragging");
 		if (this.selectedIds.has(n.id) && !preview) el.classList.add("is-selected");
 		el.classList.add(...classList(it.className));
 		const arg = this.itemArg(el, meta);
 		el.classList.add(...classList(this.opts.itemClassNames?.(arg)));
 		el.dataset.id = n.id;
+		this.applyItemWriteState(el, n.id);
 		if (it.kind) el.dataset.kind = it.kind;
 		const color = it.color ?? it.borderColor;
 		if (color) el.style.setProperty("--tnc-c", color);
@@ -577,7 +591,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		const custom = variant === "list" ? this.opts.listItemContent?.(arg) : null;
 		const content = indicator ? null : (custom ?? this.opts.itemContent?.(arg));
 		if (indicator) {
-			// A dot only; the cell around it is the target.
+			if (this.opts.monthDisplay === "chips") el.append(h(this.doc, "span", "tnc-item-title", null, it.title));
 		} else if (content != null) {
 			const wrap = h(this.doc, "div", "tnc-item-main");
 			wrap.append(content);
@@ -591,6 +605,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	}
 
 	refreshItemEl(el: HTMLElement, meta: ElMeta<D>): void {
+		this.applyItemWriteState(el, meta.n.id);
 		const time = el.querySelector<HTMLElement>(":scope .tnc-item-time");
 		if (time) this.fillTime(time, meta.n, meta.variant, meta.day);
 		el.classList.toggle("is-dragging", this.draggingId === meta.n.id);
@@ -797,6 +812,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 			this.current.revealDay(this.anchor);
 		}
 		else if (this.current instanceof TimelineView) this.current.scrollToDay(this.anchor);
+		else if (this.current instanceof YearView) this.current.revealDay(this.anchor);
 
 		if (rangeChanged) this.opts.onRangeChange?.(this.view);
 	}
@@ -826,9 +842,11 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 
 	/** The range, run on to the end of the strip's days so their dots are right. */
 	private dataRangeFor(range: DateRange): DateRange {
-		const end = this.strip ? Math.max(range.endDay, this.strip.window().end) : range.endDay;
-		if (end === range.endDay) return range;
-		return { ...range, endDay: end, end: new Date(toInstant(end, 0, this.zone)) };
+		const window = this.strip?.window();
+		const start = window ? Math.min(range.startDay, window.start) : range.startDay;
+		const end = window ? Math.max(range.endDay, window.end) : range.endDay;
+		if (start === range.startDay && end === range.endDay) return range;
+		return { ...range, startDay: start, start: new Date(toInstant(start, 0, this.zone)), endDay: end, end: new Date(toInstant(end, 0, this.zone)) };
 	}
 
 	/** Adds, updates or removes the date strip for the current view. */
@@ -879,21 +897,25 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	private stripShown(): void {
 		if (!this.strip || this.rebuilding || !this.view) return;
 		const next = this.dataRangeFor(this.view.range);
-		if (next.endDay === this.view.dataRange.endDay) return;
+		if (next.startDay === this.view.dataRange.startDay && next.endDay === this.view.dataRange.endDay) return;
 		this.view = { ...this.view, dataRange: next };
 		this.opts.onRangeChange?.(this.view);
 	}
 
 	/** What is under a point, the date strip included. */
 	private hitAt(x: number, y: number): Hit | null {
+		const target = this.doc.elementFromPoint(x, y);
+		if (!target || !this.root.contains(target)) {
+			this.strip?.markTarget(null);
+			return null;
+		}
 		const strip = this.strip;
 		if (strip) {
-			const el = this.doc.elementFromPoint(x, y);
-			const day = el ? strip.dayAt(el) : null;
+			const day = strip.dayAt(target);
 			strip.markTarget(day !== null && this.draggingId ? day : null);
 			if (day !== null) return { kind: "day", day };
 		}
-		return this.current?.hit(x, y) ?? null;
+		return this.current?.el.contains(target) ? this.current.hit(x, y) : null;
 	}
 
 	private agendaList(): ListView<D> | null {
@@ -1016,11 +1038,13 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		buttons.style.display = "flex";
 		select.style.display = "none";
 		const startWidth = Array.from(start.children).reduce((width, child) => width + child.scrollWidth, 0);
-		const compact = mode === "select" || (mode === "auto" && startWidth + buttons.scrollWidth + 32 > this.root.clientWidth);
+		const availableWidth = Math.min(this.root.clientWidth, this.toolbarEl.clientWidth);
+		const compact = mode === "select" || (mode === "auto" && startWidth + buttons.scrollWidth + 32 > availableWidth);
 		buttons.hidden = compact;
 		select.hidden = !compact;
 		buttons.style.display = compact ? "none" : "flex";
 		select.style.display = compact ? "" : "none";
+		select.parentElement?.classList.toggle("tnc-toolbar-end--compact", compact);
 	}
 
 	private applyChange(change: StoreChange): void {
@@ -1094,7 +1118,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		const s = wallTime(n.startMs, this.zone);
 		const start = this.fmt.time(s.minute, true);
 		if (variant === "dot" || variant === "bar" || variant === "indicator") return { start: s.day === day ? start : "", end: "" };
-		if (n.startMs === n.endMs) return { start, end: "" };
+		if (n.startMs === n.endMs || n.item.timeDisplay === "start") return { start, end: "" };
 		return { start, end: this.fmt.time(wallTime(n.endMs, this.zone).minute, true) };
 	}
 
@@ -1112,7 +1136,8 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		}
 		const s = wallTime(n.startMs, this.zone);
 		const e = wallTime(n.endMs, this.zone);
-		return `${n.item.title}, ${this.fmt.longDate(s.day)} ${this.fmt.time(s.minute)} – ${this.fmt.time(e.minute)}`;
+		const start = `${n.item.title}, ${this.fmt.longDate(s.day)} ${this.fmt.time(s.minute)}`;
+		return n.item.timeDisplay === "start" || n.startMs === n.endMs ? start : `${start} – ${this.fmt.time(e.minute)}`;
 	}
 
 	private defaultContent(meta: ElMeta<D>): HTMLElement {
@@ -1142,7 +1167,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	private addHandles(el: HTMLElement, meta: ElMeta<D>): void {
 		const { n, variant } = meta;
 		const ports = variant === "timeline" && !meta.mirror && n.id !== EXTERNAL_ID && !!this.opts.timeline?.onLink;
-		if (variant === "dot" || !this.isEditable(n, "duration")) {
+		if (variant === "dot" || !this.isEditable(n, "duration", true)) {
 			if (ports) this.addPorts(el, n);
 			return;
 		}
@@ -1287,6 +1312,10 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	}
 
 	private readonly onDocPointerDown = (ev: PointerEvent) => {
+		if (this.cancelledPointerId !== null) {
+			this.cancelledPointerId = null;
+			this.listenDoc(false);
+		}
 		const t = ev.target as Node;
 		if (this.popover && !this.popover.el.contains(t) && !this.popover.anchor.contains(t)) this.closeMore();
 		if (this.selection && !this.root.contains(t)) this.unselect();
@@ -1295,6 +1324,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	private readonly onPointerDown = (ev: PointerEvent) => {
 		if (ev.button !== 0 || this.session) return;
 		const target = ev.target as Element;
+		if (target.closest(".tnc-dg--compact .tnc-dg-day")) return;
 		if (target.closest("button, a, input, select, textarea, .tnc-toolbar, .tnc-port, [data-tnc-no-drag]")) {
 			if (!target.closest(".tnc-item")) return;
 			if (target.closest(".tnc-port, [data-tnc-no-drag], input, select, textarea")) return;
@@ -1327,8 +1357,10 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 			y0: ev.clientY,
 			active: false,
 			origin,
-			grab: overflowOrigin && this.current instanceof TimeGridView && !origin?.allDay
-				? { kind: "time", day: overflowOrigin.day, minute: overflowOrigin.minute }
+			grab: overflowOrigin
+				? this.current instanceof TimeGridView && !origin?.allDay
+					? { kind: "time", day: overflowOrigin.day, minute: overflowOrigin.minute }
+					: { kind: "day", day: this.meta.get(itemEl!)!.day }
 				: this.current?.hit(ev.clientX, ev.clientY) ?? null,
 			proposal: null,
 			denied: false,
@@ -1357,16 +1389,83 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 
 	private activate(s: Session<D>): void {
 		s.active = true;
+		if (s.lastEvent) this.leaveHover(s.lastEvent);
 		if (s.timer !== null) this.win.clearTimeout(s.timer);
 		s.timer = null;
 		if (s.origin) {
 			this.draggingId = s.origin.id;
-			for (const el of this.elementsFor(s.origin.id)) el.classList.add("is-dragging");
+			for (const el of this.elementsFor(s.origin.id)) {
+				if (this.opts.view !== "list" && s.mode === "move") {
+					const source = el.cloneNode(true) as HTMLElement;
+					source.classList.remove("is-selected");
+					source.classList.add("tnc-drag-source");
+					source.setAttribute("aria-hidden", "true");
+					source.inert = true;
+					for (const node of [source, ...source.querySelectorAll<HTMLElement>("[id], [data-id], [data-task-path]")]) {
+						node.removeAttribute("id");
+						node.removeAttribute("data-id");
+						node.removeAttribute("data-task-path");
+					}
+					el.before(source);
+					this.dragSources.push(source);
+				}
+				if (this.opts.view === "list" && !this.listDragPreview && s.mode === "move") {
+					const bounds = el.getBoundingClientRect();
+					const preview = el.cloneNode(true) as HTMLElement;
+					preview.classList.add("tnc-drag-preview", "is-dragging");
+					preview.removeAttribute("data-id");
+					preview.removeAttribute("data-task-path");
+					preview.setAttribute("aria-hidden", "true");
+					preview.inert = true;
+					preview.style.width = `${bounds.width}px`;
+					this.root.append(preview);
+					this.listDragPreview = { element: preview, offsetX: s.x0 - bounds.left, offsetY: s.y0 - bounds.top, width: bounds.width, height: bounds.height };
+				}
+				el.classList.add("is-dragging");
+			}
 		}
 		this.closeMore();
 		if (s.mode !== "select") this.unselectSilently();
 		this.root.classList.add("tnc-dragging", `tnc-dragging-${s.mode}`);
 		if (s.lastEvent) this.track(s, s.lastEvent);
+		this.startDragScroll();
+	}
+
+	private startDragScroll(): void {
+		if (this.dragScrollFrame !== null) return;
+		const tick = () => {
+			this.dragScrollFrame = null;
+			const session = this.session;
+			const pointer = session?.lastEvent;
+			if (!session?.active || !pointer) return;
+			const origin = session.origin ? this.elementsFor(session.origin.id)[0] : this.viewHost;
+			const underPointer = this.doc.elementFromPoint(pointer.clientX, pointer.clientY);
+			let moved = false;
+			if (origin && underPointer && this.root.contains(underPointer)) {
+				for (const axis of ["x", "y"] as const) {
+					const scroller = scrollerOf(origin, axis);
+					if (!scroller) continue;
+					const viewport = scroller === this.doc.scrollingElement
+						? { left: 0, top: 0, right: this.win.innerWidth, bottom: this.win.innerHeight }
+						: scroller.getBoundingClientRect();
+					const coordinate = axis === "x" ? pointer.clientX : pointer.clientY;
+					const lower = Math.max(0, axis === "x" ? viewport.left : viewport.top);
+					const upper = Math.min(axis === "x" ? this.win.innerWidth : this.win.innerHeight, axis === "x" ? viewport.right : viewport.bottom);
+					if (coordinate < lower || coordinate > upper) continue;
+					const delta = coordinate < lower + 32 ? -Math.min(12, (lower + 32 - coordinate) / 2)
+						: coordinate > upper - 32 ? Math.min(12, (coordinate - upper + 32) / 2) : 0;
+					if (!delta) continue;
+					if (!this.dragScrollOrigins.has(scroller)) this.dragScrollOrigins.set(scroller, { top: scroller.scrollTop, left: scroller.scrollLeft });
+					const before = axis === "x" ? scroller.scrollLeft : scroller.scrollTop;
+					if (axis === "x") scroller.scrollLeft += delta;
+					else scroller.scrollTop += delta;
+					moved ||= before !== (axis === "x" ? scroller.scrollLeft : scroller.scrollTop);
+				}
+			}
+			if (moved) this.track(session, pointer);
+			this.dragScrollFrame = this.win.requestAnimationFrame(tick);
+		};
+		this.dragScrollFrame = this.win.requestAnimationFrame(tick);
 	}
 
 	private readonly onTouchMove = (ev: TouchEvent) => {
@@ -1399,6 +1498,12 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	};
 
 	private readonly onPointerUp = (ev: PointerEvent) => {
+		if (ev.pointerId === this.cancelledPointerId) {
+			this.cancelledPointerId = null;
+			this.suppressNextClick();
+			this.listenDoc(false);
+			return;
+		}
 		const s = this.session;
 		if (!s || ev.pointerId !== s.pointerId) return;
 		if (!s.active) {
@@ -1412,10 +1517,15 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 			return;
 		}
 		this.suppressNextClick();
+		this.track(s, ev);
 		this.endSession(ev, false);
 	};
 
 	private readonly onPointerCancel = (ev: PointerEvent) => {
+		if (ev.pointerId === this.cancelledPointerId) {
+			this.cancelledPointerId = null;
+			this.listenDoc(false);
+		}
 		if (this.session && ev.pointerId === this.session.pointerId) this.endSession(null, true);
 	};
 
@@ -1423,20 +1533,36 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		if (ev.key === "Escape" && this.session) {
 			ev.preventDefault();
 			ev.stopPropagation();
+			const pointerId = this.session.active ? this.session.pointerId : null;
 			this.endSession(null, true);
+			if (pointerId !== null) {
+				this.cancelledPointerId = pointerId;
+				this.listenDoc(true);
+			}
 		}
 	};
 
 	/** Proposal for the current pointer position. */
 	private track(s: Session<D>, ev: PointerEvent): void {
+		if (this.listDragPreview) {
+			const preview = this.listDragPreview;
+			const bounds = this.root.getBoundingClientRect();
+			preview.element.style.left = `${Math.max(8, Math.min(this.win.innerWidth - preview.width - 8, ev.clientX - preview.offsetX)) - bounds.left}px`;
+			preview.element.style.top = `${Math.max(8, Math.min(this.win.innerHeight - preview.height - 8, ev.clientY - preview.offsetY)) - bounds.top}px`;
+		}
 		const hit = this.hitAt(ev.clientX, ev.clientY);
 		if (s.mode === "external") {
 			this.trackExternal(s, hit);
 			return;
 		}
 		if (!s.grab) s.grab = hit;
-		if (!hit || !s.grab) return;
+		if (!hit || !s.grab) {
+			this.invalidateProposal(s);
+			return;
+		}
 		if (s.mode === "select") {
+			s.denied = false;
+			this.root.classList.remove("tnc-drop-denied");
 			const sel = this.selectionFor(s.grab, hit);
 			if (!sel) return;
 			this.selection = sel;
@@ -1445,14 +1571,34 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		}
 		const origin = s.origin!;
 		const p = s.mode === "move" ? this.moveProposal(origin, s.grab, hit) : this.resizeProposal(origin, hit, s.mode === "resize-start");
-		if (!p) return;
+		if (!p) {
+			this.invalidateProposal(s);
+			return;
+		}
 		const allowed = this.opts.canDrop?.({ item: origin.item, start: new Date(p.startMs), end: new Date(p.endMs), allDay: p.allDay, rowId: p.rowId }) ?? true;
 		s.denied = !allowed;
 		this.root.classList.toggle("tnc-drop-denied", !allowed);
-		if (!allowed || sameProposal(p, s.proposal)) return;
+		if (!allowed) {
+			this.invalidateProposal(s);
+			return;
+		}
+		if (sameProposal(p, s.proposal)) return;
 		s.proposal = p;
 		this.dragRow = p.rowId !== undefined ? { id: origin.id, rowId: p.rowId } : null;
-		this.applyChange(this.store.upsert([this.withProposal(origin, p)]));
+		if (this.opts.view !== "list") this.applyChange(this.store.upsert([this.withProposal(origin, p)]));
+	}
+
+	private invalidateProposal(s: Session<D>): void {
+		const hadProposal = s.proposal !== null;
+		s.proposal = null;
+		s.hit = null;
+		s.denied = true;
+		this.dragRow = null;
+		this.root.classList.add("tnc-drop-denied");
+		this.strip?.markTarget(null);
+		this.unselectSilently();
+		if (s.mode === "external") this.applyChange(this.store.remove([EXTERNAL_ID]));
+		else if (hadProposal && s.origin) this.applyChange(this.store.upsert([s.origin.item]));
 	}
 
 	private trackExternal(s: Session<D>, raw: Hit | null): void {
@@ -1461,11 +1607,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		const hit = raw?.kind === "timeline" && raw.area !== "track" && raw.area !== "header" ? null : raw;
 		s.hit = hit;
 		if (!hit) {
-			if (s.proposal) {
-				s.proposal = null;
-				this.applyChange(this.store.remove([EXTERNAL_ID]));
-			}
-			this.unselectSilently();
+			this.invalidateProposal(s);
 			return;
 		}
 		const dur = src.durationMinutes ?? this.opts.defaultTimedMinutes;
@@ -1485,6 +1627,10 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 			this.opts.canDrop?.({ item: this.externalItem(src, p), start: new Date(p.startMs), end: new Date(p.endMs), allDay: p.allDay, rowId: p.rowId }) ?? true;
 		s.denied = !allowed;
 		this.root.classList.toggle("tnc-drop-denied", !allowed);
+		if (!allowed) {
+			this.invalidateProposal(s);
+			return;
+		}
 		if (sameProposal(p, s.proposal)) return;
 		s.proposal = p;
 		// Off a row (heading, date header) the drop date shows as a column.
@@ -1704,7 +1850,18 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	private endSession(ev: PointerEvent | null, cancel: boolean): void {
 		const s = this.session;
 		if (!s) return;
+		if (this.dragScrollFrame !== null) this.win.cancelAnimationFrame(this.dragScrollFrame);
+		this.dragScrollFrame = null;
+		if (cancel || s.denied) for (const [scroller, position] of this.dragScrollOrigins) {
+			scroller.scrollTop = position.top;
+			scroller.scrollLeft = position.left;
+		}
+		this.dragScrollOrigins.clear();
 		this.session = null;
+		this.listDragPreview?.element.remove();
+		this.listDragPreview = null;
+		for (const source of this.dragSources) source.remove();
+		this.dragSources = [];
 		if (s.timer !== null) this.win.clearTimeout(s.timer);
 		this.listenDoc(false);
 		this.root.classList.remove(
@@ -1774,6 +1931,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 			revert();
 			return;
 		}
+		if (this.opts.view === "list") this.applyChange(this.store.upsert([this.withProposal(origin, p)]));
 		this.flush();
 		this.commit(s.mode === "move" ? "drop" : "resize", origin, p, ev, revert);
 	}
@@ -1785,6 +1943,11 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		ev: PointerEvent | KeyboardEvent | null,
 		revert: () => void,
 	): void {
+		let reverted = false;
+		const mark = (state: "pending" | "failed" | "changed") => {
+			this.itemWriteStates.set(origin.id, state);
+			for (const element of this.elementsFor(origin.id)) this.applyItemWriteState(element, origin.id);
+		};
 		const arg: ItemChangeArg<D> = {
 			item: origin.item,
 			start: new Date(p.startMs),
@@ -1800,18 +1963,27 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 			jsEvent: ev,
 			source: ev && "key" in ev ? "keyboard" : "pointer",
 			view: this.view,
-			revert,
+			revert: () => { reverted = true; revert(); mark("failed"); },
 		};
 		const handler = kind === "drop" ? this.opts.onItemDrop : this.opts.onItemResize;
 		try {
+			mark("pending");
 			const res: unknown = handler?.(arg);
 			if (res && typeof (res as PromiseLike<unknown>).then === "function") {
-				Promise.resolve(res).catch(() => revert());
+				void Promise.resolve(res).then(() => { if (!reverted) mark("changed"); }, () => arg.revert());
 			}
+			else if (!reverted) mark("changed");
 		} catch (err) {
-			revert();
+			arg.revert();
 			throw err;
 		}
+	}
+
+	private applyItemWriteState(element: HTMLElement, id: string): void {
+		const state = this.itemWriteStates.get(id);
+		for (const name of ["pending", "failed", "changed"]) element.classList.toggle(`is-write-${name}`, state === name);
+		if (state === "pending") element.setAttribute("aria-busy", "true");
+		else element.removeAttribute("aria-busy");
 	}
 
 	/* --------------------------------------------------------- click / keys */
@@ -1825,6 +1997,12 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	};
 
 	private readonly onClick = (ev: MouseEvent) => {
+		const compactDay = (ev.target as Element).closest?.<HTMLElement>(".tnc-dg--compact .tnc-dg-day");
+		if (compactDay && this.root.contains(compactDay) && !(ev.target as Element).closest(".tnc-navlink")) {
+			const day = parseDay(compactDay.dataset.date ?? "");
+			if (day !== null) this.openMore(day, compactDay, ev);
+			return;
+		}
 		// Year days are buttons, which pointer sessions skip; their click covers
 		// mouse, touch and keyboard alike.
 		const yearDay = (ev.target as Element).closest?.<HTMLElement>(".tnc-ym-day");
@@ -1923,7 +2101,8 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 			const day = parseDay(target.dataset.date ?? "");
 			if (day !== null) {
 				ev.preventDefault();
-				this.clickSlot({ kind: "day", day }, ev, true);
+				if (target.closest(".tnc-dg--compact")) this.openMore(day, target, ev);
+				else this.clickSlot({ kind: "day", day }, ev, true);
 			}
 			return;
 		}
@@ -2014,9 +2193,13 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		const dt = ev.dataTransfer;
 		if (!dt || !this.opts.acceptNativeDrop?.(dt) || !this.current) return;
 		ev.preventDefault();
+		const hit = this.hitAt(ev.clientX, ev.clientY);
+		if (!hit || (hit.kind === "timeline" && hit.area !== "track" && hit.area !== "header")) {
+			dt.dropEffect = "none";
+			this.unselectSilently();
+			return;
+		}
 		dt.dropEffect = "copy";
-		const hit = this.current.hit(ev.clientX, ev.clientY);
-		if (!hit || (hit.kind === "timeline" && hit.area !== "track" && hit.area !== "header")) return;
 		const sel = this.selectionFor(hit, hit);
 		if (!sel) return;
 		this.selection = sel;
@@ -2032,7 +2215,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		const dt = ev.dataTransfer;
 		if (!dt || !this.opts.acceptNativeDrop?.(dt) || !this.current) return;
 		ev.preventDefault();
-		const hit = this.current.hit(ev.clientX, ev.clientY);
+		const hit = this.hitAt(ev.clientX, ev.clientY);
 		this.unselectSilently();
 		if (!hit || (hit.kind === "timeline" && hit.area !== "track" && hit.area !== "header")) return;
 		const sel = this.selectionFor(hit, hit);
@@ -2072,6 +2255,7 @@ function rangeMoved(prev: ViewInfo | undefined, next: ViewInfo): boolean {
 		prev.type !== next.type ||
 		prev.range.startDay !== next.range.startDay ||
 		prev.range.endDay !== next.range.endDay ||
+		prev.dataRange.startDay !== next.dataRange.startDay ||
 		prev.dataRange.endDay !== next.dataRange.endDay
 	);
 }
