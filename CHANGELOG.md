@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Added
+
+- Pinching a time grid on touch rescales its slots around the time under the fingers. `onSlotHeightChange` reports the settled height for hosts to store, and `pinchZoom: false` turns the gesture off.
+- `basesLayoutOptions` reads `slotHeight` and `pinchZoom` from Bases calendar settings.
+
 ## 0.1.8
 
 ### Changed

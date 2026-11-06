@@ -77,6 +77,8 @@ Defaults come from `calendarViewOptions.ts` (UI) and the `CalendarView.ts:553-60
 | `slotMaxTime` | text | `CS.slotMaxTime` (`24:00:00`) | hours ≤ 48; at 48 only `48:00` is allowed |
 | `slotDuration` | text | `CS.slotDuration` (`00:30:00`) | ≤ 23h |
 | `snapDuration` | text | `CS.slotDuration` | Falls back to the effective slotDuration |
+| `slotHeight` | slider 5–96 | `CS.slotHeight` (24) | Pixels per slot; timeGrid only |
+| `pinchZoom` | toggle | `true` | Two-finger pinch rescales the time grid; timeGrid only |
 | `scrollTime` | text | `CS.scrollTime` (`08:00:00`) | |
 | `nowIndicator` | toggle | `CS.nowIndicator` (true) | |
 | `showTimeGrid` | toggle | true | False hides the hour grid with CSS classes `advanced-calendar-view--hide-time-grid` / `__calendar--hide-time-grid`, leaving only the all-day row. In that case an "auto" `dayMaxEvents` becomes `false` (unlimited) (`CalendarView.ts:282`) |

@@ -65,6 +65,7 @@ export class TimeGridView<D> implements View {
 		const showGrid = opts.timeGrid;
 		this.el = h(doc, "div", "tnc-tg", { role: "table", "aria-label": ctx.view.title });
 		this.el.classList.toggle("tnc-tg--no-grid", !showGrid);
+		this.el.classList.toggle("tnc-tg--pinch", showGrid && opts.pinchZoom);
 		this.scroller = h(doc, "div", "tnc-tg-scroll");
 		this.dayNavigation = h(doc, "div", "tnc-tg-day-navigation", { role: "group", "aria-label": ctx.view.title });
 		this.scroller.addEventListener("scroll", () => this.updateDayNavigation());
@@ -204,7 +205,13 @@ export class TimeGridView<D> implements View {
 		if (this.nowGutter) gutter.append(this.nowGutter);
 	}
 
-	private applyScale(): void {
+	/** Slot height as drawn, which `expandRows` can stretch past the option. */
+	get drawnSlotHeight(): number {
+		return this.ctx.slot.duration * this.ppm;
+	}
+
+	/** Applies `slotHeight`. Items are placed in percentages, so they follow without a render. */
+	applyScale(): void {
 		const { opts, slot } = this.ctx;
 		this.ppm = opts.slotHeight / slot.duration;
 		this.fitRows(false);

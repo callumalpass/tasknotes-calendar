@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { center, drag, item, lastLog, open, slotPoint } from "./helpers";
 
 test.describe("time grid", () => {
@@ -487,4 +487,99 @@ test("@touch agenda rows scroll the page at auto height", async ({ page }) => {
 	await touch("touchEnd", box.x + 40, box.y - 140);
 	await expect.poll(() => page.evaluate(() => document.scrollingElement!.scrollTop)).toBeGreaterThan(before + 60);
 	expect(await lastLog(page, "drop")).toBeUndefined();
+});
+
+test.describe("@touch time grid pinch", () => {
+	const MINUTE = 10 * 60;
+
+	/** Moves two fingers apart (or together) around the 10:00 line, returning that line's y before and after. */
+	async function pinch(page: Page, startGap: number, endGap: number, start: { x: number; y: number } | null = null) {
+		const cdp = await page.context().newCDPSession(page);
+		const line = await slotPoint(page, "2026-10-21", MINUTE);
+		await page.evaluate((y) => {
+			const scroller = document.querySelector<HTMLElement>(".tnc-tg-scroll")!;
+			const { top, height } = scroller.getBoundingClientRect();
+			scroller.scrollTop += y - (top + height / 2);
+		}, line.y);
+		const before = await slotPoint(page, "2026-10-21", MINUTE);
+		const { x, y } = start ?? before;
+		const points = (gap: number) => [{ x, y: y - gap / 2, id: 0 }, { x, y: y + gap / 2, id: 1 }];
+		const [a, b] = points(startGap);
+		await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [a!] });
+		await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [a!, b!] });
+		for (let i = 1; i <= 8; i++) {
+			await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: points(startGap + ((endGap - startGap) * i) / 8) });
+		}
+		await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+		return { before, after: await slotPoint(page, "2026-10-21", MINUTE) };
+	}
+
+	async function openDay(page: Page, options: Record<string, unknown> = {}) {
+		await open(page, "view=timeGridDay&date=2026-10-21");
+		await page.evaluate((extra) => {
+			(window as unknown as { heights: number[] }).heights = [];
+			window.tnc.calendar.setOptions({
+				height: "fill",
+				expandRows: false,
+				onSlotHeightChange: (height: number) => (window as unknown as { heights: number[] }).heights.push(height),
+				...extra,
+			});
+		}, options);
+	}
+	const heights = (page: Page) => page.evaluate(() => (window as unknown as { heights: number[] }).heights);
+	const drawn = (page: Page) => page.evaluate(() => parseFloat(document.querySelector<HTMLElement>(".tnc-tg")!.style.getPropertyValue("--tnc-slot-px")));
+
+	for (const height of ["fill", "auto"]) {
+		test(`spreading fingers enlarges slots around the time beneath them at ${height} height`, async ({ page }) => {
+			await openDay(page, { height, expandRows: false });
+			const { before, after } = await pinch(page, 100, 200);
+			expect(await drawn(page)).toBe(48);
+			expect(await heights(page)).toEqual([48]);
+			expect(Math.abs(after.y - before.y)).toBeLessThanOrEqual(1);
+		});
+	}
+
+	test("a pinch cannot shrink slots below what expandRows fills", async ({ page }) => {
+		await openDay(page, { expandRows: true, slotMinTime: "08:00", slotMaxTime: "14:00" });
+		const fitted = await drawn(page);
+		expect(fitted).toBeGreaterThan(24);
+		await pinch(page, 200, 60);
+		expect(await drawn(page)).toBeCloseTo(fitted, 3);
+	});
+
+	test("a pinch stops at the slot height limits", async ({ page }) => {
+		await openDay(page);
+		await pinch(page, 60, 360);
+		expect(await drawn(page)).toBe(96);
+		await pinch(page, 200, 20);
+		expect(await drawn(page)).toBe(16);
+		expect(await heights(page)).toEqual([96, 16]);
+	});
+
+	test("resting two fingers without moving them reports nothing", async ({ page }) => {
+		await openDay(page);
+		await pinch(page, 100, 100);
+		expect(await heights(page)).toEqual([]);
+		expect(await drawn(page)).toBe(24);
+	});
+
+	test("a pinch from a draggable item scales instead of dragging it", async ({ page }) => {
+		await openDay(page);
+		await page.evaluate(() => {
+			(window as unknown as { drops: number }).drops = 0;
+			window.tnc.calendar.setOptions({ onItemDrop: () => void ((window as unknown as { drops: number }).drops += 1) });
+			window.tnc.setItems([{ id: "pinched", title: "Pinched", start: "2026-10-21T09:00", end: "2026-10-21T12:00" }]);
+		});
+		await pinch(page, 60, 120);
+		expect(await heights(page)).toEqual([48]);
+		expect(await page.evaluate(() => (window as unknown as { drops: number }).drops)).toBe(0);
+		await expect(page.locator(".tnc-dragging")).toHaveCount(0);
+	});
+
+	test("pinchZoom: false leaves the grid alone", async ({ page }) => {
+		await openDay(page, { pinchZoom: false });
+		await pinch(page, 100, 200);
+		expect(await drawn(page)).toBe(24);
+		expect(await heights(page)).toEqual([]);
+	});
 });

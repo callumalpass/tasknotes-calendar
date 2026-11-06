@@ -248,6 +248,8 @@ const FIELDS: Field[] = [
 	{ key: "slotDuration", type: "text" },
 	{ key: "snapDuration", type: "text" },
 	{ key: "scrollTime", type: "text" },
+	{ key: "slotHeight", type: "num" },
+	{ key: "pinchZoom", type: "bool" },
 	{ key: "nowIndicator", type: "bool" },
 	{ key: "showTimeGrid", type: "bool" },
 	{ key: "selectMirror", type: "bool" },

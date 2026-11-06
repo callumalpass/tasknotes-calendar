@@ -707,6 +707,10 @@
 .tnc-tg-body {
 	position: relative;
 }
+.tnc-tg--pinch .tnc-tg-body {
+	/* Pinches rescale the grid rather than zoom the page. */
+	touch-action: pan-x pan-y;
+}
 .tnc-gutter {
 	border-right: 1px solid var(--tnc-line);
 }
