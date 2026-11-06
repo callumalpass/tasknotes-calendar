@@ -35,7 +35,7 @@ for (const [name, query] of views) {
 }
 
 for (const [name, query] of views.filter(([name]) => !["month-dots", "year"].includes(name))) {
-	test(`${name}: items reachable and operable by keyboard`, async ({ page }) => {
+	test(`${name}: items remain keyboard-operable after asynchronous writes settle`, async ({ page }) => {
 		await open(page, `view=${query}&date=2026-10-21&tz=Europe%2FLondon&locale=en-GB`);
 		const id = name === "timeline" ? "p-web-research" : name === "list" ? "due-1" : name === "week" ? "scheduled-8" : "scheduled-1";
 		const target = item(page, id);
@@ -56,9 +56,17 @@ for (const [name, query] of views.filter(([name]) => !["month-dots", "year"].inc
 		if (name === "list") return;
 		await page.keyboard.press("Alt+ArrowRight");
 		await expect.poll(() => lastLog(page, "drop")).toContain(`drop ${id} `);
+		await expect(target).not.toHaveAttribute("aria-busy");
+		const moved = await page.evaluate(id => window.tnc.items().find(item => item.id === id), id);
+		expect(await page.evaluate(id => window.tnc.calendar.getItem(id), id)).toEqual(moved);
 		await expect(target).toBeFocused();
 		await page.keyboard.press("Alt+Shift+ArrowRight");
 		await expect.poll(() => lastLog(page, "resize")).toContain(`resize ${id} `);
+		await expect(target).not.toHaveAttribute("aria-busy");
+		const resized = await page.evaluate(id => window.tnc.items().find(item => item.id === id), id);
+		expect(await page.evaluate(id => window.tnc.calendar.getItem(id), id)).toEqual(resized);
+		expect(resized?.start).toEqual(moved?.start);
+		expect(resized?.end).not.toEqual(moved?.end);
 		await expect(target).toBeFocused();
 	});
 }
@@ -95,12 +103,14 @@ test("week: narrow containers scroll sideways instead of crushing day columns", 
 	expect(gutter && box && Math.abs(gutter.x - box.x)).toBeLessThan(2);
 });
 
-test("year: narrow calendars preserve usable date targets without month overlap", async ({ page }) => {
+test("year: narrow calendars preserve date targets and reveal the anchor month", async ({ page }) => {
 	await open(page, "view=multiMonthYear&date=2026-10-21&tz=Europe%2FLondon&locale=en-GB");
 	// A phone-width calendar, whatever the playground's own layout does.
 	await page.locator(".tnc").evaluate((el) => {
 		(el as HTMLElement).style.width = "360px";
 	});
+	await page.evaluate(() => window.tnc.calendar.gotoDate("2026-10-21"));
+	await expect(page.locator('.tnc-ym-day[data-date="2026-10-21"]')).toBeInViewport();
 	const months = page.locator(".tnc-ym");
 	const [first, second, third] = await Promise.all([0, 1, 2].map((i) => months.nth(i).boundingBox()));
 	expect(second!.y).toBeGreaterThan(first!.y);

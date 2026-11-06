@@ -37,9 +37,7 @@ test("held collision drags paint each task once and Escape restores the event ex
 		const bounds = range.getBoundingClientRect();
 		return { left: bounds.left, right: bounds.right, top: bounds.top, bottom: bounds.bottom };
 	}));
-	for (let first = 0; first < titles.length; first++) for (let second = first + 1; second < titles.length; second++) {
-		const left = titles[first];
-		const right = titles[second];
+	for (const [index, left] of titles.entries()) for (const right of titles.slice(index + 1)) {
 		expect(Math.min(left.right, right.right) - Math.max(left.left, right.left) > 1 && Math.min(left.bottom, right.bottom) - Math.max(left.top, right.top) > 1).toBe(false);
 	}
 	await page.keyboard.press("Escape");
@@ -127,6 +125,9 @@ test("pending, settled and reverted writes retain distinct states across refresh
 	await page.keyboard.press("Alt+ArrowDown");
 	await expect(event).toHaveAttribute("aria-busy", "true");
 	await expect(event).toHaveClass(/is-write-pending/);
+	const pending = await page.evaluate(() => window.tnc.calendar.getItem("write"));
+	await page.keyboard.press("Alt+Shift+ArrowDown");
+	expect(await page.evaluate(() => window.tnc.calendar.getItem("write"))).toEqual(pending);
 	await page.evaluate(() => window.tnc.setItems(window.tnc.items().map(item => ({ ...item, title: "Refreshed while saving" }))));
 	await expect(event).toHaveAttribute("aria-busy", "true");
 	await expect(event.locator(".tnc-resize-end")).toHaveCount(1);
