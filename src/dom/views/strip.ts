@@ -172,7 +172,7 @@ export class DateStrip<D> {
 			const dots = h(doc, "span", "tnc-strip-dots", { "aria-hidden": "true" });
 			for (const item of items.slice(0, 3)) {
 				const dot = h(doc, "span", "tnc-strip-dot");
-				const color = item.item.borderColor || item.item.backgroundColor;
+				const color = item.item.color || item.item.borderColor || item.item.backgroundColor;
 				if (color) dot.style.backgroundColor = color;
 				dots.append(dot);
 			}

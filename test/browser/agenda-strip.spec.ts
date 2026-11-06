@@ -26,10 +26,12 @@ test("agenda paging moves the list and scrollbar movement updates the strip", as
 		window.tnc.calendar.setOptions({ listAgenda: true, height: "fill" });
 		window.tnc.setItems(Array.from({ length: 28 }, (_, offset) => ({
 			id: `day-${offset}`, title: `Appointment ${offset}`,
+			color: "#b32980",
 			start: new Date(2026, 9, 21 + offset, 9), end: new Date(2026, 9, 21 + offset, 10),
 		})));
 	});
 	await page.locator(".tnc-strip-next").click();
+	await expect(page.locator(".tnc-strip-day.is-focus .tnc-strip-dot")).toHaveCSS("background-color", "rgb(179, 41, 128)");
 	await expect(page.locator(".tnc-strip-day.is-focus")).toHaveAttribute("data-date", "2026-10-28");
 	const topDay = () => page.evaluate(() => {
 		const scroll = document.querySelector(".tnc-list-scroll")!;
