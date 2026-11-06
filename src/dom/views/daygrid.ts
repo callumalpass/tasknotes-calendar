@@ -82,7 +82,7 @@ export class DayGridView<D> implements View {
 				const cell = h(doc, "div", cls.join(" "), { role: "gridcell", "aria-label": ctx.fmt.longDate(d), "data-date": arg.dateStr });
 				if (this.dotsMode) cell.tabIndex = 0;
 				const num = ctx.fmt.dayNumber(d);
-				const label = ymdOfDay(d).day === 1 ? `${ctx.fmt.monthShort(d)} ${num}` : num;
+				const label = !this.dotsMode && ymdOfDay(d).day === 1 ? `${ctx.fmt.monthShort(d)} ${num}` : num;
 				cell.append(
 					h(
 						doc,

@@ -909,6 +909,15 @@
 	font-variant-numeric: tabular-nums;
 }
 
+.tnc-dg--dots .tnc-dg-top {
+	justify-content: center;
+}
+
+.tnc-dg--dots .tnc-dg-dots {
+	justify-content: center;
+	align-content: flex-start;
+}
+
 /* ------------------------------------------------------------------ list */
 .tnc-list {
 	display: flex;
