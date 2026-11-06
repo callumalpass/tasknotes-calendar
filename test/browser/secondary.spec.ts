@@ -17,9 +17,9 @@ test("empty agenda preserves host recovery alongside per-day creation", async ({
 	await expect(page.getByRole("button", { name: "Clear filters" })).toHaveCount(0);
 });
 
-test("drag origin stays in place and Escape restores the event exactly", async ({ page }) => {
+test("held collision drags paint each task once and Escape restores the event exactly", async ({ page }) => {
 	await open(page, "view=timeGridDay&date=2026-10-21");
-	await page.evaluate(() => window.tnc.setItems([{ id: "gesture", title: "Write release notes", start: "2026-10-21T10:00", end: "2026-10-21T11:00" }]));
+	await page.evaluate(() => window.tnc.setItems(["gesture", "peer-one", "peer-two"].map(id => ({ id, title: `Review ${id}`, start: "2026-10-21T10:00", end: "2026-10-21T11:00" }))));
 	const event = page.locator('.tnc-item[data-id="gesture"]');
 	const before = await event.boundingBox();
 	const pointer = await center(event);
@@ -27,9 +27,21 @@ test("drag origin stays in place and Escape restores the event exactly", async (
 	await page.mouse.down();
 	await page.mouse.move(pointer.x, pointer.y + 60, { steps: 10 });
 	const origin = page.locator(".tnc-drag-origin");
-	await expect(origin).toHaveCount(1);
-	expect(await origin.boundingBox()).toEqual(before);
-	await expect(origin).toHaveAttribute("aria-hidden", "true");
+	await page.waitForTimeout(1200);
+	await expect(origin).toHaveCount(0);
+	await expect(page.locator('.tnc-item--timed')).toHaveCount(3);
+	await expect(event).toHaveClass(/is-dragging/);
+	const titles = await page.locator('.tnc-item--timed .tnc-item-title').evaluateAll(elements => elements.map(element => {
+		const range = document.createRange();
+		range.selectNodeContents(element);
+		const bounds = range.getBoundingClientRect();
+		return { left: bounds.left, right: bounds.right, top: bounds.top, bottom: bounds.bottom };
+	}));
+	for (let first = 0; first < titles.length; first++) for (let second = first + 1; second < titles.length; second++) {
+		const left = titles[first];
+		const right = titles[second];
+		expect(Math.min(left.right, right.right) - Math.max(left.left, right.left) > 1 && Math.min(left.bottom, right.bottom) - Math.max(left.top, right.top) > 1).toBe(false);
+	}
 	await page.keyboard.press("Escape");
 	await page.mouse.up();
 	await expect(origin).toHaveCount(0);

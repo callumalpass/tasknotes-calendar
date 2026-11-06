@@ -131,7 +131,6 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	conflicts: Map<string, string[]> = new Map();
 	slot = { min: 0, max: MINUTES_PER_DAY, duration: 30, snap: 30, scroll: 480 };
 	draggingId: string | null = null;
-	private dragOriginGhost: HTMLElement | null = null;
 	private listDragPreview: { element: HTMLElement; offsetX: number; offsetY: number; width: number; height: number } | null = null;
 	private dragScrollFrame: number | null = null;
 	private readonly dragScrollOrigins = new Map<Element, { top: number; left: number }>();
@@ -1390,15 +1389,6 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 					preview.style.width = `${bounds.width}px`;
 					this.root.append(preview);
 					this.listDragPreview = { element: preview, offsetX: s.x0 - bounds.left, offsetY: s.y0 - bounds.top, width: bounds.width, height: bounds.height };
-				} else if (this.opts.view !== "list" && !this.dragOriginGhost && s.mode === "move") {
-					const ghost = el.cloneNode(true) as HTMLElement;
-					ghost.classList.add("tnc-drag-origin");
-					ghost.removeAttribute("data-id");
-					ghost.removeAttribute("data-task-path");
-					ghost.setAttribute("aria-hidden", "true");
-					ghost.inert = true;
-					el.parentElement?.append(ghost);
-					this.dragOriginGhost = ghost;
 				}
 				el.classList.add("is-dragging");
 			}
@@ -1837,8 +1827,6 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		}
 		this.dragScrollOrigins.clear();
 		this.session = null;
-		this.dragOriginGhost?.remove();
-		this.dragOriginGhost = null;
 		this.listDragPreview?.element.remove();
 		this.listDragPreview = null;
 		if (s.timer !== null) this.win.clearTimeout(s.timer);

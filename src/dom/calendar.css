@@ -1833,12 +1833,6 @@
 	outline: 1px solid var(--tnc-focus);
 	outline-offset: -1px;
 }
-.tnc .tnc-item.tnc-drag-origin {
-	opacity: var(--tnc-drag-opacity);
-	pointer-events: none;
-	filter: none;
-	box-shadow: none;
-}
 .tnc .tnc-item--list.is-dragging:not(.tnc-drag-preview) {
 	opacity: var(--tnc-drag-opacity);
 	box-shadow: none;
