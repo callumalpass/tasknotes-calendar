@@ -19,7 +19,7 @@ export interface ViewInfo {
 	title: string;
 	/**
 	 * The days whose items the calendar can show: `range`, extended to the
-	 * end of the days a date strip is showing so their dots are right. Load
+	 * full window of days a date strip is showing so their dots are right. Load
 	 * items for this range; `onRangeChange` fires when it changes too.
 	 */
 	dataRange: DateRange;

@@ -201,6 +201,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 				this.positionMore();
 			});
 			this.resizeObs.observe(this.root);
+			this.resizeObs.observe(this.toolbarEl);
 		}
 	}
 
@@ -840,9 +841,11 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 
 	/** The range, run on to the end of the strip's days so their dots are right. */
 	private dataRangeFor(range: DateRange): DateRange {
-		const end = this.strip ? Math.max(range.endDay, this.strip.window().end) : range.endDay;
-		if (end === range.endDay) return range;
-		return { ...range, endDay: end, end: new Date(toInstant(end, 0, this.zone)) };
+		const window = this.strip?.window();
+		const start = window ? Math.min(range.startDay, window.start) : range.startDay;
+		const end = window ? Math.max(range.endDay, window.end) : range.endDay;
+		if (start === range.startDay && end === range.endDay) return range;
+		return { ...range, startDay: start, start: new Date(toInstant(start, 0, this.zone)), endDay: end, end: new Date(toInstant(end, 0, this.zone)) };
 	}
 
 	/** Adds, updates or removes the date strip for the current view. */
@@ -893,7 +896,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	private stripShown(): void {
 		if (!this.strip || this.rebuilding || !this.view) return;
 		const next = this.dataRangeFor(this.view.range);
-		if (next.endDay === this.view.dataRange.endDay) return;
+		if (next.startDay === this.view.dataRange.startDay && next.endDay === this.view.dataRange.endDay) return;
 		this.view = { ...this.view, dataRange: next };
 		this.opts.onRangeChange?.(this.view);
 	}
@@ -1034,11 +1037,13 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		buttons.style.display = "flex";
 		select.style.display = "none";
 		const startWidth = Array.from(start.children).reduce((width, child) => width + child.scrollWidth, 0);
-		const compact = mode === "select" || (mode === "auto" && startWidth + buttons.scrollWidth + 32 > this.root.clientWidth);
+		const availableWidth = Math.min(this.root.clientWidth, this.toolbarEl.clientWidth);
+		const compact = mode === "select" || (mode === "auto" && startWidth + buttons.scrollWidth + 32 > availableWidth);
 		buttons.hidden = compact;
 		select.hidden = !compact;
 		buttons.style.display = compact ? "none" : "flex";
 		select.style.display = compact ? "" : "none";
+		select.parentElement?.classList.toggle("tnc-toolbar-end--compact", compact);
 	}
 
 	private applyChange(change: StoreChange): void {
@@ -2222,6 +2227,7 @@ function rangeMoved(prev: ViewInfo | undefined, next: ViewInfo): boolean {
 		prev.type !== next.type ||
 		prev.range.startDay !== next.range.startDay ||
 		prev.range.endDay !== next.range.endDay ||
+		prev.dataRange.startDay !== next.dataRange.startDay ||
 		prev.dataRange.endDay !== next.dataRange.endDay
 	);
 }
