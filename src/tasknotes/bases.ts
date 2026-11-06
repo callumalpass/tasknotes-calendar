@@ -50,6 +50,8 @@ export interface BasesCalendarLayout {
 	slotDuration?: string | null;
 	snapDuration?: string | null;
 	scrollTime?: string | null;
+	slotHeight?: number | null;
+	pinchZoom?: boolean | null;
 	nowIndicator?: boolean | null;
 	showTimeGrid?: boolean | null;
 	selectMirror?: boolean | null;
@@ -79,6 +81,8 @@ export const BASES_CALENDAR_DEFAULTS: Required<{ [K in keyof BasesCalendarLayout
 	slotDuration: "00:30:00",
 	snapDuration: "00:30:00",
 	scrollTime: "08:00:00",
+	slotHeight: 24,
+	pinchZoom: true,
 	nowIndicator: true,
 	showTimeGrid: true,
 	selectMirror: true,
@@ -158,6 +162,8 @@ export function basesLayoutOptions<D>(
 		slotDuration,
 		snapDuration: time("snapDuration") ?? slotDuration,
 		scrollTime: time("scrollTime", 48) ?? d.scrollTime,
+		slotHeight: clamp(Math.round(num(s.slotHeight, d.slotHeight)), 5, 96),
+		pinchZoom: pick("pinchZoom") !== false,
 		nowIndicator: pick("nowIndicator") !== false,
 		timeGrid: showTimeGrid,
 		selectMirror: pick("selectMirror") !== false,

@@ -79,6 +79,24 @@ interface Session<D> {
 	pan?: { x: Element | null; y: Element | null; left: number; top: number; active: boolean };
 }
 
+/** A two-finger pinch on a time grid. */
+interface Pinch {
+	body: HTMLElement;
+	distance: number;
+	/** Client y of the fingers' midpoint. */
+	y: number;
+	/** Fraction of the grid's height that stays under the midpoint. */
+	anchor: number;
+	/** Slot height drawn when the pinch began. */
+	drawn: number;
+	/** `slotHeight` when the pinch began. */
+	option: number;
+}
+
+/** Slot heights a pinch can reach, widened to include the height it starts from. */
+const PINCH_MIN_SLOT = 16;
+const PINCH_MAX_SLOT = 96;
+
 /**
  * Option equality that ignores identity churn from frameworks: functions are
  * equal if both exist (callbacks are always read live), and plain objects and
@@ -140,6 +158,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	strip: DateStrip<D> | null = null;
 	private stripSize: ResizeObserver | null = null;
 	private rebuilding = false;
+	private pinch: Pinch | null = null;
 
 	private readonly toolbarEl: HTMLElement;
 	private readonly viewHost: HTMLElement;
@@ -1268,8 +1287,11 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		r.addEventListener("dragover", this.onNativeDragOver);
 		r.addEventListener("dragleave", this.onNativeDragLeave);
 		r.addEventListener("drop", this.onNativeDrop);
+		r.addEventListener("touchstart", this.onTouchStart, { passive: true });
 		// Must exist before touchstart: Chrome decides then whether a touch sequence can be blocked.
 		r.addEventListener("touchmove", this.onTouchMove, { passive: false });
+		r.addEventListener("touchend", this.onTouchEnd);
+		r.addEventListener("touchcancel", this.onTouchEnd);
 		r.addEventListener("pointerover", this.onAdoptCheck);
 		r.addEventListener("focusin", this.onAdoptCheck);
 		this.doc.addEventListener("pointerdown", this.onDocPointerDown, true);
@@ -1289,7 +1311,10 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		r.removeEventListener("dragover", this.onNativeDragOver);
 		r.removeEventListener("dragleave", this.onNativeDragLeave);
 		r.removeEventListener("drop", this.onNativeDrop);
+		r.removeEventListener("touchstart", this.onTouchStart);
 		r.removeEventListener("touchmove", this.onTouchMove);
+		r.removeEventListener("touchend", this.onTouchEnd);
+		r.removeEventListener("touchcancel", this.onTouchEnd);
 		r.removeEventListener("pointerover", this.onAdoptCheck);
 		r.removeEventListener("focusin", this.onAdoptCheck);
 		this.doc.removeEventListener("pointerdown", this.onDocPointerDown, true);
@@ -1468,9 +1493,74 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		this.dragScrollFrame = this.win.requestAnimationFrame(tick);
 	}
 
+	private readonly onTouchStart = (ev: TouchEvent) => {
+		const first = ev.touches[0];
+		const second = ev.touches[1];
+		if (!first || !second) {
+			this.endPinch();
+			return;
+		}
+		const view = this.current;
+		if (this.session?.active || !this.opts.pinchZoom || !(view instanceof TimeGridView)) return;
+		const body = (first.target as Element).closest<HTMLElement>(".tnc-tg-body");
+		if (!body?.contains(second.target as Node)) return;
+		// A second finger means neither a long press nor a pan by hand.
+		this.endSession(null, true);
+		if (this.pinch) return;
+		const { top, height } = body.getBoundingClientRect();
+		const y = (first.clientY + second.clientY) / 2;
+		this.pinch = {
+			body,
+			distance: Math.max(1, Math.hypot(first.clientX - second.clientX, first.clientY - second.clientY)),
+			y,
+			anchor: (y - top) / height,
+			drawn: view.drawnSlotHeight,
+			option: this.opts.slotHeight,
+		};
+	};
+
 	private readonly onTouchMove = (ev: TouchEvent) => {
 		if (this.session?.active) ev.preventDefault();
+		const p = this.pinch;
+		const first = ev.touches[0];
+		const second = ev.touches[1];
+		if (!p || !first || !second) return;
+		// Fingers that moved before the second landed already belong to a native scroll.
+		if (!ev.cancelable) {
+			this.endPinch();
+			return;
+		}
+		ev.preventDefault();
+		const height = (p.drawn * Math.hypot(first.clientX - second.clientX, first.clientY - second.clientY)) / p.distance;
+		p.y = (first.clientY + second.clientY) / 2;
+		this.pinchTo(p, Math.min(Math.max(p.drawn, PINCH_MAX_SLOT), Math.max(Math.min(p.drawn, PINCH_MIN_SLOT), height)));
 	};
+
+	private readonly onTouchEnd = (ev: TouchEvent) => {
+		if (ev.touches.length < 2) this.endPinch();
+	};
+
+	/** Rescales the grid, keeping the anchored time under the fingers. */
+	private pinchTo(p: Pinch, slotHeight: number): void {
+		this.opts = { ...this.opts, slotHeight };
+		if (!(this.current instanceof TimeGridView)) return;
+		this.current.applyScale();
+		const { top, height } = p.body.getBoundingClientRect();
+		const scroller = scrollerOf(p.body, "y");
+		if (scroller) scroller.scrollTop += top + height * p.anchor - p.y;
+	}
+
+	private endPinch(): void {
+		const p = this.pinch;
+		this.pinch = null;
+		// A rebuild during the pinch replaced the grid.
+		if (!p?.body.isConnected) return;
+		const settled = Math.round(this.opts.slotHeight);
+		const slotHeight = settled === Math.round(p.drawn) ? p.option : settled;
+		this.pinchTo(p, slotHeight);
+		this.current?.render(null);
+		if (slotHeight !== p.option) this.opts.onSlotHeightChange?.(slotHeight);
+	}
 
 	private readonly onPointerMove = (ev: PointerEvent) => {
 		const s = this.session;

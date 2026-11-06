@@ -46,6 +46,7 @@ The host persists changes; the calendar supplies optimistic updates and a
 - **Changes** (`onItemDrop`, `onItemResize`, `onSelect`, `onExternalDrop`) report TaskNotes storage strings (`startStr`/`endStr`), `revert()`, and `source: "pointer" | "keyboard"`. Returning a rejected promise reverts.
 - **Clicks**: `onDateClick` reports `minute` (the slot's wall-clock minute, snapped to `slotDuration`; null for day cells and the all-day row), `allDay` and `startStr` (`"YYYY-MM-DD"` or `"YYYY-MM-DDTHH:mm"`), so a tap on a slot can prefill a time.
 - **Input**: mouse drag after 4px, touch long press (`longPressDelay`), keyboard (Enter/Space, Shift+F10, Alt+Arrow to move, Alt+Shift+Arrow to resize), external drags via `beginExternalDrag` or native HTML5 drops.
+- **Pinch**: two fingers on a time grid rescale `slotHeight` between 16 and 96px, keeping the time under the fingers in place. `onSlotHeightChange` reports the settled height for the host to store; `pinchZoom: false` leaves the gesture to the browser.
 - **Popouts**: all listeners, timers and observers use the host element's `ownerDocument`; bare `window`/`document` are lint errors in `src`.
 
 ### Views and options

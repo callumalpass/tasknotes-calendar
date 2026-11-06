@@ -369,6 +369,8 @@ export interface CalendarOptions<D = unknown> {
 	scrollTime: string | number;
 	/** Pixel height of one slot. */
 	slotHeight: number;
+	/** A two-finger pinch on a time grid rescales `slotHeight`. False leaves the pinch to the browser. */
+	pinchZoom: boolean;
 	/** Stretch slots to fill the available height ("fill" mode only). */
 	expandRows: boolean;
 	nowIndicator: boolean;
@@ -407,6 +409,8 @@ export interface CalendarOptions<D = unknown> {
 	/* callbacks */
 	onRangeChange?: (view: ViewInfo) => void;
 	onViewChange?: (view: ViewInfo) => void;
+	/** A pinch settled on a new `slotHeight`, whole pixels. Store it to keep the scale across reloads. */
+	onSlotHeightChange?: (slotHeight: number) => void;
 	onItemClick?: (arg: ItemPointerArg<D>) => void;
 	onItemDoubleClick?: (arg: ItemPointerArg<D>) => void;
 	onItemContextMenu?: (arg: ItemPointerArg<D>) => void;
@@ -489,6 +493,7 @@ export function defaultOptions<D>(): CalendarOptions<D> {
 		snapDuration: undefined,
 		scrollTime: "08:00",
 		slotHeight: 24,
+		pinchZoom: true,
 		expandRows: false,
 		nowIndicator: true,
 		selectMirror: true,
@@ -544,6 +549,7 @@ export const LAYOUT_KEYS = new Set<keyof CalendarOptions>([
 	"slotDuration",
 	"snapDuration",
 	"slotHeight",
+	"pinchZoom",
 	"expandRows",
 	"nowIndicator",
 	"slotEventOverlap",
