@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Require a short pause at a drag edge before scrolling, so passing through the edge does not shift the grid. Cancellation still restores the original scroll position.
+- Keep the whole requested hour label visible below the sticky day and all-day headers when scrolling to a time.
+
 ## 0.1.9
 
 ### Added

@@ -153,6 +153,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	private dragSources: HTMLElement[] = [];
 	private dragScrollFrame: number | null = null;
 	private readonly dragScrollOrigins = new Map<Element, { top: number; left: number }>();
+	private readonly dragScrollEdges = new Map<"x" | "y", { scroller: Element; direction: number; since: number }>();
 	private readonly itemWriteStates = new Map<string, "pending" | "failed" | "changed">();
 	dragRow: { id: string; rowId: string } | null = null;
 	strip: DateStrip<D> | null = null;
@@ -1476,17 +1477,25 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 					const coordinate = axis === "x" ? pointer.clientX : pointer.clientY;
 					const lower = Math.max(0, axis === "x" ? viewport.left : viewport.top);
 					const upper = Math.min(axis === "x" ? this.win.innerWidth : this.win.innerHeight, axis === "x" ? viewport.right : viewport.bottom);
-					if (coordinate < lower || coordinate > upper) continue;
+					if (coordinate < lower || coordinate > upper) { this.dragScrollEdges.delete(axis); continue; }
 					const delta = coordinate < lower + 32 ? -Math.min(12, (lower + 32 - coordinate) / 2)
 						: coordinate > upper - 32 ? Math.min(12, (coordinate - upper + 32) / 2) : 0;
-					if (!delta) continue;
+					if (!delta) { this.dragScrollEdges.delete(axis); continue; }
+					const edge = this.dragScrollEdges.get(axis);
+					const direction = Math.sign(delta);
+					const now = this.win.performance.now();
+					if (!edge || edge.scroller !== scroller || edge.direction !== direction) {
+						this.dragScrollEdges.set(axis, { scroller, direction, since: now });
+						continue;
+					}
+					if (now - edge.since < 180) continue;
 					if (!this.dragScrollOrigins.has(scroller)) this.dragScrollOrigins.set(scroller, { top: scroller.scrollTop, left: scroller.scrollLeft });
 					const before = axis === "x" ? scroller.scrollLeft : scroller.scrollTop;
 					if (axis === "x") scroller.scrollLeft += delta;
 					else scroller.scrollTop += delta;
 					moved ||= before !== (axis === "x" ? scroller.scrollLeft : scroller.scrollTop);
 				}
-			}
+			} else this.dragScrollEdges.clear();
 			if (moved) this.track(session, pointer);
 			this.dragScrollFrame = this.win.requestAnimationFrame(tick);
 		};
@@ -1947,6 +1956,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 			scroller.scrollLeft = position.left;
 		}
 		this.dragScrollOrigins.clear();
+		this.dragScrollEdges.clear();
 		this.session = null;
 		this.listDragPreview?.element.remove();
 		this.listDragPreview = null;

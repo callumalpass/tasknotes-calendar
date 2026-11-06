@@ -628,7 +628,9 @@ export class TimeGridView<D> implements View {
 	scrollToTime(minute: number): void {
 		if (!this.body) return;
 		const y = (minute - this.ctx.slot.min) * this.ppm;
-		this.scroller.scrollTop = Math.max(0, y);
+		const label = this.gutter?.querySelector<HTMLElement>(".tnc-slot-label");
+		const inset = label ? Math.ceil(label.getBoundingClientRect().height / 2) + 2 : 0;
+		this.scroller.scrollTop = Math.max(0, y - inset);
 	}
 
 	getScroll() {
