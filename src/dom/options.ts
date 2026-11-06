@@ -345,7 +345,7 @@ export interface CalendarOptions<D = unknown> {
 	 * the tap target: dots ignore the pointer and are hidden from assistive
 	 * technology, and the cell is labelled with its item count.
 	 */
-	monthDisplay: "full" | "dots";
+	monthDisplay: "full" | "dots" | "chips";
 	/** "local" or an IANA name. */
 	timeZone: string;
 	locale: string | undefined;

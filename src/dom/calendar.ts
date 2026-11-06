@@ -347,7 +347,12 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	gotoDate(date: DateInput): void {
 		const day = this.toDay(date);
 		if (day === null) return;
+		const sameMonth = this.opts.view === "month" && startOfMonth(day) === startOfMonth(this.anchor);
 		this.anchor = day;
+		if (sameMonth) {
+			this.view = { ...this.view, anchor: day };
+			return;
+		}
 		this.rebuild(true);
 	}
 
@@ -584,7 +589,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		const custom = variant === "list" ? this.opts.listItemContent?.(arg) : null;
 		const content = indicator ? null : (custom ?? this.opts.itemContent?.(arg));
 		if (indicator) {
-			// A dot only; the cell around it is the target.
+			if (this.opts.monthDisplay === "chips") el.append(h(this.doc, "span", "tnc-item-title", null, it.title));
 		} else if (content != null) {
 			const wrap = h(this.doc, "div", "tnc-item-main");
 			wrap.append(content);
@@ -1107,7 +1112,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		const s = wallTime(n.startMs, this.zone);
 		const start = this.fmt.time(s.minute, true);
 		if (variant === "dot" || variant === "bar" || variant === "indicator") return { start: s.day === day ? start : "", end: "" };
-		if (n.startMs === n.endMs) return { start, end: "" };
+		if (n.startMs === n.endMs || n.item.timeDisplay === "start") return { start, end: "" };
 		return { start, end: this.fmt.time(wallTime(n.endMs, this.zone).minute, true) };
 	}
 
@@ -1125,7 +1130,8 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		}
 		const s = wallTime(n.startMs, this.zone);
 		const e = wallTime(n.endMs, this.zone);
-		return `${n.item.title}, ${this.fmt.longDate(s.day)} ${this.fmt.time(s.minute)} – ${this.fmt.time(e.minute)}`;
+		const start = `${n.item.title}, ${this.fmt.longDate(s.day)} ${this.fmt.time(s.minute)}`;
+		return n.item.timeDisplay === "start" || n.startMs === n.endMs ? start : `${start} – ${this.fmt.time(e.minute)}`;
 	}
 
 	private defaultContent(meta: ElMeta<D>): HTMLElement {

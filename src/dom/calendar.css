@@ -918,6 +918,35 @@
 	align-content: flex-start;
 }
 
+.tnc-dg--chips {
+	--tnc-chip-h: 14px;
+}
+.tnc-dg--chips .tnc-dg-dots {
+	left: 2px;
+	right: 2px;
+	flex-direction: column;
+	flex-wrap: nowrap;
+	align-items: stretch;
+	justify-content: flex-start;
+}
+.tnc-dg--chips .tnc-dg-dots > .tnc-item--indicator {
+	width: 100%;
+	height: var(--tnc-chip-h);
+	border-radius: var(--tnc-radius);
+	padding: 0 2px;
+	color: var(--tnc-fg, var(--tnc-text));
+	font-size: 10px;
+	line-height: var(--tnc-chip-h);
+}
+.tnc-dg--chips .tnc-item-title {
+	display: block;
+	white-space: nowrap;
+	text-overflow: clip;
+}
+.tnc-dg--chips .tnc-dg-dots-more {
+	line-height: var(--tnc-chip-h);
+}
+
 /* ------------------------------------------------------------------ list */
 .tnc-list {
 	display: flex;
