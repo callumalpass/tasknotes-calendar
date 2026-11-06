@@ -4,6 +4,7 @@
 
 - Agenda strip paging moves the list to the focused day; scrollbar and keyboard scrolling update the date highlight after a day is picked. Activity dots show up to three appointments in their configured colours.
 - Hosts can supply one wall-clock `formatTime` callback for event, stack, selection, accessibility and slot labels.
+- Hosts can set `overlapStackThreshold` to group dense overlapping appointments into the existing collision stack even in wide columns. Explicit side-by-side layouts remain unchanged.
 
 ## 0.1.9
 

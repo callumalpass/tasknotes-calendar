@@ -413,9 +413,11 @@ export class TimeGridView<D> implements View {
 		const { opts } = ctx;
 		const readableWidth = Number.parseFloat(ctx.win.getComputedStyle(this.el).getPropertyValue("--tnc-event-min-width")) || 128;
 		const laneWidth = c.col.clientWidth * (lane === "actual" && placements.some((placement) => placement.split) ? 0.22 : 1);
+		const overlapThreshold = opts.overlapStackThreshold ?? 0;
 		const collapse = placements.some((placement) => {
 			const columns = opts.eventMaxStack > 0 ? Math.min(placement.cols, opts.eventMaxStack) : placement.cols;
-			return columns > 1 && columns * readableWidth > laneWidth;
+			const denseOverlap = opts.slotEventOverlap && overlapThreshold > 1 && placement.cols >= overlapThreshold;
+			return columns > 1 && (columns * readableWidth > laneWidth || denseOverlap);
 		});
 		const withMore = lane === "plan" || collapse;
 		const maxStack = collapse ? 1 : opts.eventMaxStack;

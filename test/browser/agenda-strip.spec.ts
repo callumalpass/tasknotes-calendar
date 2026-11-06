@@ -43,3 +43,25 @@ test("agenda paging moves the list and scrollbar movement updates the strip", as
 	await expect.poll(async () => page.locator(".tnc-strip-day.is-focus").getAttribute("data-date")).not.toBe("2026-10-28");
 	await expect.poll(async () => ({ focus: await page.locator(".tnc-strip-day.is-focus").getAttribute("data-date"), top: await topDay() })).toEqual({ focus: await topDay(), top: await topDay() });
 });
+
+test("hosts can stack dense overlaps without replacing side-by-side layouts", async ({ page }) => {
+	await page.setViewportSize({ width: 1180, height: 800 });
+	await open(page, "view=timeGridDay&date=2026-10-21&tz=Europe%2FLondon");
+	await page.evaluate(() => {
+		window.tnc.calendar.setOptions({ overlapStackThreshold: 3, slotEventOverlap: true, eventMaxStack: 0 });
+		window.tnc.setItems([
+			{ id: "draft", title: "Draft", start: "2026-10-21T09:30", end: "2026-10-21T11:00" },
+			{ id: "review", title: "Review", start: "2026-10-21T09:30", end: "2026-10-21T10:30" },
+			{ id: "meeting", title: "Meeting", start: "2026-10-21T10:00", end: "2026-10-21T10:30" },
+		]);
+	});
+	await expect(page.locator(".tnc-more--stack")).toHaveCount(1);
+	await expect(page.locator(".tnc-more--stack .tnc-collision-count")).toHaveText("3");
+	await expect(page.locator(".tnc-item--timed")).toHaveCount(0);
+	await page.locator(".tnc-more--stack").click();
+	await expect(page.locator(".tnc-popover .tnc-item")).toHaveCount(3);
+	await page.keyboard.press("Escape");
+	await page.evaluate(() => window.tnc.calendar.setOptions({ slotEventOverlap: false }));
+	await expect(page.locator(".tnc-more--stack")).toHaveCount(0);
+	await expect(page.locator(".tnc-item--timed")).toHaveCount(3);
+});
