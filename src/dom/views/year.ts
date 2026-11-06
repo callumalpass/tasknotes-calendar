@@ -102,6 +102,15 @@ export class YearView<D> implements View {
 		this.scroller.scrollTop = s.top;
 	}
 
+	revealDay(day: Day): void {
+		const month = this.cells.find((cell) => cell.day === day)?.el.closest<HTMLElement>(".tnc-ym");
+		if (!month) return;
+		const bounds = month.getBoundingClientRect();
+		const viewport = this.scroller.getBoundingClientRect();
+		if (bounds.top < viewport.top) this.scroller.scrollTop += bounds.top - viewport.top;
+		else if (bounds.bottom > viewport.bottom) this.scroller.scrollTop += bounds.bottom - viewport.bottom;
+	}
+
 	elementsFor(_id: string): HTMLElement[] {
 		return [];
 	}

@@ -805,6 +805,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 			this.current.revealDay(this.anchor);
 		}
 		else if (this.current instanceof TimelineView) this.current.scrollToDay(this.anchor);
+		else if (this.current instanceof YearView) this.current.revealDay(this.anchor);
 
 		if (rangeChanged) this.opts.onRangeChange?.(this.view);
 	}

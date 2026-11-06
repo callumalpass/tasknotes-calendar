@@ -1,6 +1,30 @@
 import { expect, test } from "@playwright/test";
 import { center, item, open, slotPoint } from "./helpers";
 
+test("year navigation reveals its anchor month and Today without resetting data refresh scroll", async ({ page }) => {
+	await page.setViewportSize({ width: 1180, height: 800 });
+	await open(page, "view=dayGridMonth&date=2026-11-06&tz=UTC");
+	await page.evaluate(() => window.tnc.calendar.changeView("year"));
+	const visible = () => page.locator('.tnc-ym-day[data-date="2026-11-06"]').evaluate(element => {
+		const month = element.closest(".tnc-ym")!.getBoundingClientRect();
+		const scroller = element.closest(".tnc-year-scroll")!.getBoundingClientRect();
+		return month.top >= scroller.top && month.bottom <= scroller.bottom;
+	});
+	await expect.poll(visible).toBe(true);
+	await page.locator(".tnc-year-scroll").evaluate(element => { element.scrollTop = 0; });
+	await page.evaluate(() => window.tnc.calendar.gotoDate("2026-11-06"));
+	await expect.poll(visible).toBe(true);
+	await page.locator(".tnc-year-scroll").evaluate(element => { element.scrollTop = 60; });
+	await page.evaluate(() => window.tnc.calendar.rerender());
+	expect(await page.locator(".tnc-year-scroll").evaluate(element => element.scrollTop)).toBe(60);
+	await page.evaluate(() => window.tnc.calendar.goToday());
+	const today = await page.evaluate(() => {
+		const date = new Date();
+		return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
+	});
+	await expect(page.locator(`.tnc-ym-day[data-date="${today}"]`)).toBeInViewport();
+});
+
 for (const view of ["timeGridDay", "timeGridWeek", "timeGridCustom", "dayGridMonth"]) {
 	for (const kind of ["scheduled", "timeblock", "timeEntry"]) {
 		test(`${view} ${kind}: leaving a date target invalidates the proposal and release`, async ({ page }) => {
