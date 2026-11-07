@@ -53,15 +53,23 @@ test("hosts can stack dense overlaps without replacing side-by-side layouts", as
 			{ id: "draft", title: "Draft", start: "2026-10-21T09:30", end: "2026-10-21T11:00" },
 			{ id: "review", title: "Review", start: "2026-10-21T09:30", end: "2026-10-21T10:30" },
 			{ id: "meeting", title: "Meeting", start: "2026-10-21T10:00", end: "2026-10-21T10:30" },
+			{ id: "pair-a", title: "Pair A", start: "2026-10-21T14:00", end: "2026-10-21T15:00" },
+			{ id: "pair-b", title: "Pair B", start: "2026-10-21T14:15", end: "2026-10-21T15:15" },
 		]);
 	});
 	await expect(page.locator(".tnc-more--stack")).toHaveCount(1);
 	await expect(page.locator(".tnc-more--stack .tnc-collision-count")).toHaveText("3");
-	await expect(page.locator(".tnc-item--timed")).toHaveCount(0);
+	await expect(page.locator(".tnc-item--timed")).toHaveCount(2);
 	await page.locator(".tnc-more--stack").click();
 	await expect(page.locator(".tnc-popover .tnc-item")).toHaveCount(3);
 	await page.keyboard.press("Escape");
 	await page.evaluate(() => window.tnc.calendar.setOptions({ slotEventOverlap: false }));
+	await expect(page.locator(".tnc-more--stack")).toHaveCount(1);
+	await expect(page.locator(".tnc-item--timed")).toHaveCount(2);
+	const first = (await page.locator('[data-id="pair-a"]').boundingBox())!;
+	const second = (await page.locator('[data-id="pair-b"]').boundingBox())!;
+	expect(first.x + first.width).toBeLessThanOrEqual(second.x);
+	await page.evaluate(() => window.tnc.calendar.setOptions({ overlapStackThreshold: 0 }));
 	await expect(page.locator(".tnc-more--stack")).toHaveCount(0);
-	await expect(page.locator(".tnc-item--timed")).toHaveCount(3);
+	await expect(page.locator(".tnc-item--timed")).toHaveCount(5);
 });

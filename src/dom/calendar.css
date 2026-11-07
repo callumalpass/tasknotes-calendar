@@ -1916,6 +1916,22 @@
 	outline: 1px solid var(--tnc-focus);
 	outline-offset: -1px;
 }
+.tnc .tnc-item--timed.is-dragging {
+	min-width: var(--tnc-drag-width);
+	max-width: var(--tnc-drag-width);
+}
+.tnc .tnc-dg .tnc-item.is-dragging:not(.is-mirror) {
+	opacity: var(--tnc-drag-opacity);
+	box-shadow: none;
+	outline: none;
+}
+.tnc .tnc-month-preview {
+	position: absolute;
+	pointer-events: none;
+	outline: 2px dashed var(--tnc-accent);
+	outline-offset: -2px;
+	z-index: 10;
+}
 .tnc .tnc-item--list.is-dragging:not(.tnc-drag-preview) {
 	opacity: var(--tnc-drag-opacity);
 	box-shadow: none;

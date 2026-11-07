@@ -151,6 +151,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	draggingId: string | null = null;
 	private listDragPreview: { element: HTMLElement; offsetX: number; offsetY: number; width: number; height: number } | null = null;
 	private dragSources: HTMLElement[] = [];
+	private dragWidth: number | null = null;
 	private dragScrollFrame: number | null = null;
 	private readonly dragScrollOrigins = new Map<Element, { top: number; left: number }>();
 	private readonly dragScrollEdges = new Map<"x" | "y", { scroller: Element; direction: number; since: number }>();
@@ -587,7 +588,10 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		if (this.conflicts.has(n.id)) el.classList.add("is-conflict");
 		const indicator = variant === "indicator";
 		if (!preview && !indicator && (this.isEditable(n, "start", true) || this.isEditable(n, "duration", true))) el.classList.add("is-draggable");
-		if (this.draggingId === n.id) el.classList.add("is-dragging");
+		if (this.draggingId === n.id) {
+			el.classList.add("is-dragging");
+			if (variant === "timed" && this.dragWidth !== null) el.style.setProperty("--tnc-drag-width", `${this.dragWidth}px`);
+		}
 		if (this.selectedIds.has(n.id) && !preview) el.classList.add("is-selected");
 		el.classList.add(...classList(it.className));
 		const arg = this.itemArg(el, meta);
@@ -1423,7 +1427,11 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		if (s.origin) {
 			this.draggingId = s.origin.id;
 			for (const el of this.elementsFor(s.origin.id)) {
-				if (this.opts.view !== "list" && s.mode === "move") {
+				if (this.meta.get(el)?.variant === "timed" && s.mode === "move") {
+					this.dragWidth = el.getBoundingClientRect().width;
+					el.style.setProperty("--tnc-drag-width", `${this.dragWidth}px`);
+				}
+				if (this.opts.view !== "list" && !(this.current instanceof DayGridView) && s.mode === "move") {
 					const source = el.cloneNode(true) as HTMLElement;
 					source.classList.remove("is-selected");
 					source.classList.add("tnc-drag-source");
@@ -1977,10 +1985,15 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		);
 		const draggedId = this.draggingId;
 		this.draggingId = null;
+		this.dragWidth = null;
 		this.dragRow = null;
-		if (draggedId) for (const el of this.elementsFor(draggedId)) el.classList.remove("is-dragging");
+		if (draggedId) for (const el of this.elementsFor(draggedId)) {
+			el.classList.remove("is-dragging");
+			el.style.removeProperty("--tnc-drag-width");
+		}
 		this.strip?.markTarget(null);
 		if (!s.active) return;
+		if (this.current instanceof DayGridView) this.current.render(null);
 
 		if (s.mode === "select") {
 			if (cancel) this.unselectSilently();

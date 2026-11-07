@@ -61,6 +61,10 @@ export class DateStrip<D> {
 		this.grid.addEventListener("keydown", this.onKeyDown);
 		this.el.addEventListener("pointerdown", this.onPointerDown);
 		this.el.addEventListener("pointerup", this.onPointerUp);
+		this.el.addEventListener("touchstart", this.ownTouch, { passive: true });
+		this.el.addEventListener("touchmove", this.ownTouch, { passive: true });
+		this.el.addEventListener("touchend", this.ownTouch, { passive: true });
+		this.el.addEventListener("touchcancel", this.ownTouch, { passive: true });
 		this.el.addEventListener("pointercancel", this.onPointerCancel);
 		this.el.addEventListener("click", this.onClickCapture, true);
 		this.draw();
@@ -218,6 +222,10 @@ export class DateStrip<D> {
 	private readonly onPointerDown = (ev: PointerEvent) => {
 		if (ev.button !== 0 || this.ctx.draggingId) return;
 		this.swipe = { id: ev.pointerId, x: ev.clientX, y: ev.clientY };
+	};
+
+	private readonly ownTouch = (event: TouchEvent) => {
+		event.stopPropagation();
 	};
 
 	private readonly onPointerUp = (ev: PointerEvent) => {
