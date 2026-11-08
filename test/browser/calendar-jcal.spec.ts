@@ -23,7 +23,8 @@ test("week headers contain weekdays and two-digit today badges in narrow columns
 	}
 });
 
-for (const view of ["timeGridDay", "dayGridMonth", "timeline"]) {
+// Month dims the original and draws a target preview instead (interactions.spec.ts covers it).
+for (const view of ["timeGridDay", "timeline"]) {
 	test(`${view}: move retains an inert dim source and clears it after Escape, drop and rejected drop`, async ({ page }) => {
 		await open(page, `view=${view}&date=2026-10-21&tz=UTC`);
 		await page.evaluate(view => {
