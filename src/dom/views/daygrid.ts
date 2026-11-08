@@ -46,6 +46,7 @@ export class DayGridView<D> implements View {
 	private topPx = 24;
 	private lastHeights = "";
 	private dotsMode: boolean;
+	private dragPreviews: HTMLElement[] = [];
 
 	constructor(private readonly ctx: ViewContext<D>) {
 		const { doc, opts, days } = ctx;
@@ -143,6 +144,36 @@ export class DayGridView<D> implements View {
 
 	render(_change: StoreChange | null): void {
 		const { ctx } = this;
+		this.clearDragPreviews();
+		const dragged = ctx.draggingId ? ctx.store.get(ctx.draggingId) : undefined;
+		const source = dragged ? this.elementsFor(dragged.id)[0] : undefined;
+		if (dragged && source && this.el.closest(".tnc-dragging-move")) {
+			const proposals = [dragged, ...[...ctx.store.all()].filter(item => item.id !== dragged.id && item.item.preview)];
+			for (const proposal of proposals) {
+				const original = this.elementsFor(proposal.id)[0] ?? source;
+				const bounds = original.getBoundingClientRect();
+				const sourceWeek = original.closest<HTMLElement>(".tnc-dg-week")!;
+				const offset = bounds.top - sourceWeek.getBoundingClientRect().top;
+				for (const week of this.weeks) {
+					const start = week.days.findIndex(day => day >= proposal.startDay && day < proposal.endDay);
+					if (start < 0) continue;
+					let end = start + 1;
+					while (!this.dotsMode && end < week.days.length && week.days[end]! < proposal.endDay) end++;
+					const preview = ctx.createItemEl({ n: proposal, day: week.days[start]!, isStart: proposal.startDay >= week.days[start]!, isEnd: proposal.endDay <= week.days[end - 1]! + 1, variant: ctx.meta.get(original)!.variant, mirror: true });
+					preview.classList.add("tnc-month-preview");
+					preview.inert = true;
+					setStyle(preview, {
+						left: `calc(${pct(start / week.days.length)} + 2px)`,
+						width: `calc(${pct((end - start) / week.days.length)} - 4px)`,
+						top: `${Math.max(this.topPx, Math.min(offset, week.row.clientHeight - bounds.height - 4))}px`,
+						height: `${bounds.height}px`,
+					});
+					week.layer.append(preview);
+					this.dragPreviews.push(preview);
+				}
+			}
+			return;
+		}
 		this.dotsMode = ctx.opts.monthDisplay !== "full" || this.grid.clientWidth / this.daysPerWeek() < 72;
 		this.el.classList.toggle("tnc-dg--dots", this.dotsMode);
 		this.el.classList.toggle("tnc-dg--compact", this.dotsMode && ctx.opts.monthDisplay === "full");
@@ -173,6 +204,11 @@ export class DayGridView<D> implements View {
 				this.renderWeek(w);
 			}
 		}
+	}
+
+	private clearDragPreviews(): void {
+		for (const preview of this.dragPreviews) this.ctx.destroyItemEl(preview);
+		this.dragPreviews = [];
 	}
 
 	/** Height of a "+N more" link as the host styles it (`--tnc-more-h`, or a taller min-height). */
@@ -388,6 +424,7 @@ export class DayGridView<D> implements View {
 	}
 
 	destroy(): void {
+		this.clearDragPreviews();
 		this.resizeObs?.disconnect();
 		for (const w of this.weeks) {
 			w.pool.clear();

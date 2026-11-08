@@ -108,7 +108,7 @@ export class YearView<D> implements View {
 		const bounds = month.getBoundingClientRect();
 		const viewport = this.scroller.getBoundingClientRect();
 		if (bounds.top < viewport.top) this.scroller.scrollTop += bounds.top - viewport.top;
-		else if (bounds.bottom > viewport.bottom) this.scroller.scrollTop += bounds.bottom - viewport.bottom;
+		else if (bounds.bottom > viewport.bottom) this.scroller.scrollTop += bounds.top - viewport.top;
 	}
 
 	elementsFor(_id: string): HTMLElement[] {

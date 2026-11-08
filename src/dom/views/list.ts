@@ -34,6 +34,7 @@ export class ListView<D> implements View {
 	private frame: number | null = null;
 	/** A picked day stays marked until the list is scrolled by hand. */
 	private pinned = false;
+	private pinnedTop = 0;
 
 	constructor(private readonly ctx: ViewContext<D>) {
 		const { doc, win, opts } = ctx;
@@ -203,6 +204,7 @@ export class ListView<D> implements View {
 		this.scroller.scrollTop += section.getBoundingClientRect().top - this.scroller.getBoundingClientRect().top;
 		this.ctx.strip?.setFocus(day);
 		this.pinned = true;
+		this.pinnedTop = this.scroller.scrollTop;
 	}
 
 	private readonly fold = () => {
@@ -212,6 +214,7 @@ export class ListView<D> implements View {
 	};
 
 	private readonly onScroll = () => {
+		if (this.pinned && Math.abs(this.scroller.scrollTop - this.pinnedTop) > 1) this.pinned = false;
 		if (this.frame !== null) return;
 		this.frame = this.ctx.win.requestAnimationFrame(() => {
 			this.frame = null;
@@ -223,7 +226,7 @@ export class ListView<D> implements View {
 	private followTop(): void {
 		const strip = this.ctx.strip;
 		if (!strip || this.pinned) return;
-		const edge = strip.el.getBoundingClientRect().bottom + 1;
+		const edge = Math.max(strip.el.getBoundingClientRect().bottom, this.scroller.getBoundingClientRect().top) + 1;
 		for (const day of this.ctx.days) {
 			const section = this.sections.get(day);
 			if (section && section.getBoundingClientRect().bottom > edge) {

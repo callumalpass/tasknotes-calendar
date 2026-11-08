@@ -151,8 +151,10 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	draggingId: string | null = null;
 	private listDragPreview: { element: HTMLElement; offsetX: number; offsetY: number; width: number; height: number } | null = null;
 	private dragSources: HTMLElement[] = [];
+	private dragWidth: number | null = null;
 	private dragScrollFrame: number | null = null;
 	private readonly dragScrollOrigins = new Map<Element, { top: number; left: number }>();
+	private readonly dragScrollEdges = new Map<"x" | "y", { scroller: Element; direction: number; since: number }>();
 	private readonly itemWriteStates = new Map<string, "pending" | "failed" | "changed">();
 	dragRow: { id: string; rowId: string } | null = null;
 	strip: DateStrip<D> | null = null;
@@ -187,7 +189,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		this.win = (this.doc.defaultView ?? (globalThis as unknown as Window));
 		this.opts = { ...defaultOptions<D>(), ...options };
 		this.zone = getTimeZone(this.opts.timeZone);
-		this.fmt = new Formatter(this.opts.locale, this.opts.hour12);
+		this.fmt = new Formatter(this.opts.locale, this.opts.hour12, this.opts.formatTime);
 		this.text = this.resolveText();
 		this.order = parseOrder(this.opts.eventOrder);
 		this.store = new ItemStore<D>(this.zone, {
@@ -317,7 +319,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 				defaultAllDayDays: this.opts.defaultAllDayDays,
 			});
 		}
-		if (has("locale") || has("hour12")) this.fmt = new Formatter(this.opts.locale, this.opts.hour12);
+		if (has("locale") || has("hour12") || has("formatTime")) this.fmt = new Formatter(this.opts.locale, this.opts.hour12, this.opts.formatTime);
 		if (has("text") || has("locale")) this.text = this.resolveText();
 		if (has("eventOrder")) this.order = parseOrder(this.opts.eventOrder);
 		if (has("date")) this.anchor = this.toDay(this.opts.date) ?? this.anchor;
@@ -586,7 +588,10 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		if (this.conflicts.has(n.id)) el.classList.add("is-conflict");
 		const indicator = variant === "indicator";
 		if (!preview && !indicator && (this.isEditable(n, "start", true) || this.isEditable(n, "duration", true))) el.classList.add("is-draggable");
-		if (this.draggingId === n.id) el.classList.add("is-dragging");
+		if (this.draggingId === n.id) {
+			el.classList.add("is-dragging");
+			if (variant === "timed" && this.dragWidth !== null) el.style.setProperty("--tnc-drag-width", `${this.dragWidth}px`);
+		}
 		if (this.selectedIds.has(n.id) && !preview) el.classList.add("is-selected");
 		el.classList.add(...classList(it.className));
 		const arg = this.itemArg(el, meta);
@@ -885,7 +890,9 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		this.root.classList.add("tnc--has-strip");
 		const { startDay, endDay } = this.view.range;
 		if (!this.strip) {
-			const strip = new DateStrip(this, (day, ev) => this.pickStripDay(day, ev), startDay, () => this.stripShown());
+			const strip = new DateStrip(this, (day, ev) => this.pickStripDay(day, ev), startDay, () => this.stripShown(), day => {
+				if (this.agendaList()) this.showListDay(day);
+			});
 			this.strip = strip;
 			this.root.insertBefore(strip.el, this.viewHost);
 			const RO = (this.win as Window & { ResizeObserver?: typeof ResizeObserver }).ResizeObserver;
@@ -1420,7 +1427,11 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		if (s.origin) {
 			this.draggingId = s.origin.id;
 			for (const el of this.elementsFor(s.origin.id)) {
-				if (this.opts.view !== "list" && s.mode === "move") {
+				if (this.meta.get(el)?.variant === "timed" && s.mode === "move") {
+					this.dragWidth = el.getBoundingClientRect().width;
+					el.style.setProperty("--tnc-drag-width", `${this.dragWidth}px`);
+				}
+				if (this.opts.view !== "list" && !(this.current instanceof DayGridView) && s.mode === "move") {
 					const source = el.cloneNode(true) as HTMLElement;
 					source.classList.remove("is-selected");
 					source.classList.add("tnc-drag-source");
@@ -1476,17 +1487,25 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 					const coordinate = axis === "x" ? pointer.clientX : pointer.clientY;
 					const lower = Math.max(0, axis === "x" ? viewport.left : viewport.top);
 					const upper = Math.min(axis === "x" ? this.win.innerWidth : this.win.innerHeight, axis === "x" ? viewport.right : viewport.bottom);
-					if (coordinate < lower || coordinate > upper) continue;
+					if (coordinate < lower || coordinate > upper) { this.dragScrollEdges.delete(axis); continue; }
 					const delta = coordinate < lower + 32 ? -Math.min(12, (lower + 32 - coordinate) / 2)
 						: coordinate > upper - 32 ? Math.min(12, (coordinate - upper + 32) / 2) : 0;
-					if (!delta) continue;
+					if (!delta) { this.dragScrollEdges.delete(axis); continue; }
+					const edge = this.dragScrollEdges.get(axis);
+					const direction = Math.sign(delta);
+					const now = this.win.performance.now();
+					if (!edge || edge.scroller !== scroller || edge.direction !== direction) {
+						this.dragScrollEdges.set(axis, { scroller, direction, since: now });
+						continue;
+					}
+					if (now - edge.since < 180) continue;
 					if (!this.dragScrollOrigins.has(scroller)) this.dragScrollOrigins.set(scroller, { top: scroller.scrollTop, left: scroller.scrollLeft });
 					const before = axis === "x" ? scroller.scrollLeft : scroller.scrollTop;
 					if (axis === "x") scroller.scrollLeft += delta;
 					else scroller.scrollTop += delta;
 					moved ||= before !== (axis === "x" ? scroller.scrollLeft : scroller.scrollTop);
 				}
-			}
+			} else this.dragScrollEdges.clear();
 			if (moved) this.track(session, pointer);
 			this.dragScrollFrame = this.win.requestAnimationFrame(tick);
 		};
@@ -1947,6 +1966,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 			scroller.scrollLeft = position.left;
 		}
 		this.dragScrollOrigins.clear();
+		this.dragScrollEdges.clear();
 		this.session = null;
 		this.listDragPreview?.element.remove();
 		this.listDragPreview = null;
@@ -1965,10 +1985,15 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		);
 		const draggedId = this.draggingId;
 		this.draggingId = null;
+		this.dragWidth = null;
 		this.dragRow = null;
-		if (draggedId) for (const el of this.elementsFor(draggedId)) el.classList.remove("is-dragging");
+		if (draggedId) for (const el of this.elementsFor(draggedId)) {
+			el.classList.remove("is-dragging");
+			el.style.removeProperty("--tnc-drag-width");
+		}
 		this.strip?.markTarget(null);
 		if (!s.active) return;
+		if (this.current instanceof DayGridView) this.current.render(null);
 
 		if (s.mode === "select") {
 			if (cancel) this.unselectSilently();

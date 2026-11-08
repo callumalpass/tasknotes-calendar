@@ -120,7 +120,7 @@ test.describe("other views", () => {
 		await expect.poll(() => lastLog(page, "drop")).toBe("drop span-1 2026-10-21 → 2026-10-24 (all-day)");
 	});
 
-	test("month: a dragged item moves with the pointer before it is dropped", async ({ page }) => {
+	test("month: the source stays in place while an inert target preview follows the pointer", async ({ page }) => {
 		await open(page, "view=dayGridMonth");
 		const el = item(page, "span-1"); // Mon 19 – Wed 21
 		const from = await center(el);
@@ -131,15 +131,19 @@ test.describe("other views", () => {
 		await page.mouse.down();
 		await page.mouse.move(from.x + 2, from.y + 6, { steps: 2 });
 		await page.mouse.move(from.x + (target.x - source.x), from.y, { steps: 8 });
-		// Mid-drag: drawn in the target cell, still marked as dragging, nothing saved yet.
 		const mid = (await el.boundingBox())!;
-		expect(mid.x - start.x).toBeCloseTo(target.x - source.x, -1);
+		expect(mid).toEqual(start);
+		const preview = page.locator(".tnc-month-preview").first();
+		expect((await preview.boundingBox())!.x - start.x).toBeCloseTo(target.x - source.x, -1);
+		await expect(preview).toHaveAttribute("inert", "");
 		await expect(el).toHaveClass(/is-dragging/);
 		expect(await lastLog(page, "drop")).toBeUndefined();
 		await page.mouse.move(from.x + (target.x - source.x) - (target.x - source.x) / 2, from.y, { steps: 4 });
-		expect((await el.boundingBox())!.x - start.x).toBeCloseTo((target.x - source.x) / 2, -1);
+		expect(await el.boundingBox()).toEqual(start);
+		expect((await preview.boundingBox())!.x - start.x).toBeCloseTo((target.x - source.x) / 2, -1);
 		await page.mouse.up();
 		await expect.poll(() => lastLog(page, "drop")).toBe("drop span-1 2026-10-20 → 2026-10-23 (all-day)");
+		await expect(page.locator(".tnc-month-preview")).toHaveCount(0);
 	});
 
 	test("month: narrow indicators and overflow counts retain a labelled day disclosure", async ({ page }) => {

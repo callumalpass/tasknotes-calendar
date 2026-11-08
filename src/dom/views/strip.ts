@@ -36,6 +36,7 @@ export class DateStrip<D> {
 		focus: Day,
 		/** Called when the days on show change, so their items can be loaded. */
 		private readonly onShown: () => void,
+		private readonly onPage?: (day: Day) => void,
 	) {
 		const { doc, text } = ctx;
 		this.focus = focus;
@@ -60,6 +61,10 @@ export class DateStrip<D> {
 		this.grid.addEventListener("keydown", this.onKeyDown);
 		this.el.addEventListener("pointerdown", this.onPointerDown);
 		this.el.addEventListener("pointerup", this.onPointerUp);
+		this.el.addEventListener("touchstart", this.ownTouch, { passive: true });
+		this.el.addEventListener("touchmove", this.ownTouch, { passive: true });
+		this.el.addEventListener("touchend", this.ownTouch, { passive: true });
+		this.el.addEventListener("touchcancel", this.ownTouch, { passive: true });
 		this.el.addEventListener("pointercancel", this.onPointerCancel);
 		this.el.addEventListener("click", this.onClickCapture, true);
 		this.draw();
@@ -113,6 +118,7 @@ export class DateStrip<D> {
 	private step(dir: 1 | -1): void {
 		this.shown = this.expanded ? addMonths(this.shown, dir) : this.shown + 7 * dir;
 		this.draw();
+		this.onPage?.(this.expanded ? this.shown : this.focus + 7 * dir);
 	}
 
 	private days(): Day[] {
@@ -139,7 +145,8 @@ export class DateStrip<D> {
 		const tabDay = days.includes(this.focus) ? this.focus : days[0];
 		const cells = days.map((d) => {
 			const arg = ctx.dayArg(d);
-			const count = store.inRange(d, d + 1).filter((n) => n.item.display !== "background" && n.item.display !== "none").length;
+			const items = store.inRange(d, d + 1).filter((n) => n.item.display !== "background" && n.item.display !== "none");
+			const count = items.length;
 			const first = ymdOfDay(d).day === 1 && d !== days[0] && !this.expanded;
 			const label = fmt.longDate(d);
 			const cell = h(
@@ -165,7 +172,15 @@ export class DateStrip<D> {
 				},
 			);
 			if (first) cell.append(h(doc, "span", "tnc-strip-month", { "aria-hidden": "true" }, fmt.monthShort(d)));
-			cell.append(h(doc, "span", "tnc-strip-num", null, fmt.dayNumber(d)), h(doc, "span", "tnc-strip-dot", { "aria-hidden": "true" }));
+			cell.append(h(doc, "span", "tnc-strip-num", null, fmt.dayNumber(d)));
+			const dots = h(doc, "span", "tnc-strip-dots", { "aria-hidden": "true" });
+			for (const item of items.slice(0, 3)) {
+				const dot = h(doc, "span", "tnc-strip-dot");
+				const color = item.item.color || item.item.borderColor || item.item.backgroundColor;
+				if (color) dot.style.backgroundColor = color;
+				dots.append(dot);
+			}
+			cell.append(dots);
 			return cell;
 		});
 		this.grid.replaceChildren(...cells);
@@ -207,6 +222,10 @@ export class DateStrip<D> {
 	private readonly onPointerDown = (ev: PointerEvent) => {
 		if (ev.button !== 0 || this.ctx.draggingId) return;
 		this.swipe = { id: ev.pointerId, x: ev.clientX, y: ev.clientY };
+	};
+
+	private readonly ownTouch = (event: TouchEvent) => {
+		event.stopPropagation();
 	};
 
 	private readonly onPointerUp = (ev: PointerEvent) => {

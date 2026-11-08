@@ -1,8 +1,18 @@
 # Changelog
 
-## Unreleased
+## 0.1.10
+
+- Freeze Month source layout during a move and draw an inert target placeholder; preserve timed drag width across collision layouts.
+- Contain date-strip touch gestures, reveal the complete target month in Year view, and allow dense collision stacks independently of the overlap preference.
+- Require a short pause at a drag edge before scrolling, so passing through the edge does not shift the grid. Cancellation still restores the original scroll position.
+- Keep the whole requested hour label visible below the sticky day and all-day headers when scrolling to a time.
+- Agenda strip paging moves the list to the focused day; scrollbar and keyboard scrolling update the date highlight after a day is picked. Activity dots show up to three appointments in their configured colours.
+- Hosts can supply one wall-clock `formatTime` callback for event, stack, selection, accessibility and slot labels.
+- Hosts can set `overlapStackThreshold` to group dense overlapping appointments into the existing collision stack even in wide columns. Explicit side-by-side layouts remain unchanged.
 
 ## 0.1.9
+
+Not published to npm (the release check failed); these changes ship in 0.1.10.
 
 ### Added
 

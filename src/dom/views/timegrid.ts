@@ -413,15 +413,17 @@ export class TimeGridView<D> implements View {
 		const { opts } = ctx;
 		const readableWidth = Number.parseFloat(ctx.win.getComputedStyle(this.el).getPropertyValue("--tnc-event-min-width")) || 128;
 		const laneWidth = c.col.clientWidth * (lane === "actual" && placements.some((placement) => placement.split) ? 0.22 : 1);
-		const collapse = placements.some((placement) => {
+		const overlapThreshold = opts.overlapStackThreshold ?? 0;
+		const collapsedClusters = new Set(placements.filter((placement) => {
 			const columns = opts.eventMaxStack > 0 ? Math.min(placement.cols, opts.eventMaxStack) : placement.cols;
-			return columns > 1 && columns * readableWidth > laneWidth;
-		});
-		const withMore = lane === "plan" || collapse;
-		const maxStack = collapse ? 1 : opts.eventMaxStack;
+			const denseOverlap = overlapThreshold > 1 && placement.cols >= overlapThreshold;
+			return columns > 1 && (columns * readableWidth > laneWidth || denseOverlap);
+		}).map(placement => placement.cluster));
 		const hiddenByCluster = new Map<number, { count: number; start: number; end: number; split: boolean; items: TimedPlacement<D>[] }>();
 		pool.begin();
 		for (const p of placements) {
+			const withMore = lane === "plan" || collapsedClusters.has(p.cluster);
+			const maxStack = collapsedClusters.has(p.cluster) ? 1 : opts.eventMaxStack;
 			const preview = p.item.item.preview || p.item.id === ctx.draggingId;
 			if (!preview && withMore && maxStack > 0 && p.cols > maxStack && p.col >= maxStack - 1) {
 				const rec = hiddenByCluster.get(p.cluster) ?? { count: 0, start: p.startMin, end: p.endMin, split: p.split, items: [] };
@@ -434,7 +436,7 @@ export class TimeGridView<D> implements View {
 			}
 			const cols = !preview && withMore && maxStack > 0 ? Math.min(p.cols, maxStack) : p.cols;
 			const span = Math.min(p.span, cols - p.col);
-			const left = p.col / cols;
+			const left = p.item.id === ctx.draggingId ? 0 : p.col / cols;
 			let width = span / cols;
 			if (opts.slotEventOverlap && cols > 1 && p.col + span < cols) width = Math.min(1 - left, width * 1.7);
 			const el = pool.place(p.item.id, this.meta(p, false));
@@ -449,8 +451,9 @@ export class TimeGridView<D> implements View {
 			});
 		}
 		pool.end();
-		if (!withMore) return;
 		for (const [cluster, rec] of hiddenByCluster) {
+			const collapse = collapsedClusters.has(cluster);
+			const maxStack = collapse ? 1 : opts.eventMaxStack;
 			const key = `${lane}-${cluster}`;
 			let link = c.more.querySelector<HTMLElement>(`[data-cluster="${key}"]`);
 			if (!link) {
@@ -628,7 +631,9 @@ export class TimeGridView<D> implements View {
 	scrollToTime(minute: number): void {
 		if (!this.body) return;
 		const y = (minute - this.ctx.slot.min) * this.ppm;
-		this.scroller.scrollTop = Math.max(0, y);
+		const label = this.gutter?.querySelector<HTMLElement>(".tnc-slot-label");
+		const inset = label ? Math.ceil(label.getBoundingClientRect().height / 2) + 2 : 0;
+		this.scroller.scrollTop = Math.max(0, y - inset);
 	}
 
 	getScroll() {
