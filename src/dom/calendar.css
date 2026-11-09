@@ -293,8 +293,42 @@
 .tnc-item--timed.is-short .tnc-item-time {
 	flex: none;
 }
-@container (max-height: 50px) and (max-width: 239px) {
-	.tnc-item--timed .tnc-item-time {
+/* Stacked layout: the time keeps its line and the title gets the lines left over
+   (11px text: n title lines need 13.75 * (n + 1) + 1px). Single-row short items drop the time when narrow. */
+.tnc-item--timed:not(.is-short) .tnc-item-title {
+	flex: 0 1 auto;
+	min-height: 0;
+}
+.tnc-item--timed:not(.is-short) .tnc-item-time {
+	flex: none;
+}
+@container (max-height: 97.2px) {
+	.tnc-item--timed:not(.is-short) .tnc-item-title {
+		-webkit-line-clamp: 5;
+	}
+}
+@container (max-height: 83.4px) {
+	.tnc-item--timed:not(.is-short) .tnc-item-title {
+		-webkit-line-clamp: 4;
+	}
+}
+@container (max-height: 69.7px) {
+	.tnc-item--timed:not(.is-short) .tnc-item-title {
+		-webkit-line-clamp: 3;
+	}
+}
+@container (max-height: 55.9px) {
+	.tnc-item--timed:not(.is-short) .tnc-item-title {
+		-webkit-line-clamp: 2;
+	}
+}
+@container (max-height: 42.2px) {
+	.tnc-item--timed:not(.is-short) .tnc-item-title {
+		-webkit-line-clamp: 1;
+	}
+}
+@container (max-width: 239px) {
+	.tnc-item--timed.is-short .tnc-item-time {
 		display: none;
 	}
 }
