@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.11
+
+- Hour-long timed items keep their time in narrow columns. Only single-row short items drop the time label when narrow; in the stacked layout the title is clamped to the lines left above the time (callumalpass/tasknotes#2528).
+- Back-to-back timed items no longer count as overlapping: an item starting exactly where a short item ends stays in the same column instead of going side by side or into a collision stack, and the short item is drawn at its real height (callumalpass/tasknotes#2529).
+
 ## 0.1.10
 
 - Freeze Month source layout during a move and draw an inert target placeholder; preserve timed drag width across collision layouts.
