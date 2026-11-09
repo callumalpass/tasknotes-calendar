@@ -81,6 +81,26 @@ describe("time grid packing", () => {
 		expect(packTimed(segs, 5).every((p) => p.cols === 1)).toBe(true);
 		expect(packTimed(segs, 30).every((p) => p.cols === 2)).toBe(true);
 	});
+	it("keeps back-to-back short items in one column (#2529)", () => {
+		const s = new ItemStore(zone);
+		s.setAll([
+			{ id: "a", title: "A", start: "2026-10-20T11:00", end: "2026-10-20T11:30" },
+			{ id: "b", title: "B", start: "2026-10-20T11:30", end: "2026-10-20T12:00" },
+			{ id: "c", title: "C", start: "2026-10-20T12:00", end: "2026-10-20T12:15" },
+			{ id: "m", title: "Milestone", start: "2026-10-20T13:00", end: "2026-10-20T13:00" },
+			{ id: "d", title: "D", start: "2026-10-20T13:00", end: "2026-10-20T13:30" },
+		]);
+		const segs = s.timedOn(D).map((n) => segmentOn(n, D, zone)!);
+		const by = Object.fromEntries(packTimed(segs, 45).map((p) => [p.item.id, p]));
+		for (const id of ["a", "b", "c"]) expect(by[id]).toMatchObject({ col: 0, cols: 1 });
+		expect(new Set([by.a!.cluster, by.b!.cluster, by.c!.cluster]).size).toBe(3);
+		expect(by.a!.abutted).toBe(true);
+		expect(by.b!.abutted).toBe(true);
+		expect(by.c!.abutted).toBeUndefined();
+		// A zero-length item still takes the minimum height beside an item at the same time.
+		expect(by.m).toMatchObject({ cols: 2 });
+		expect(by.d).toMatchObject({ cols: 2 });
+	});
 	it("splits plan and actual lanes only where they overlap", () => {
 		const s = new ItemStore(zone);
 		s.setAll([

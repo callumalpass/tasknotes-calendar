@@ -444,7 +444,7 @@ export class TimeGridView<D> implements View {
 			el.classList.toggle("is-short", short);
 			setStyle(el, {
 				top: top(p.startMin),
-				height: `max(${height(p)}, ${opts.eventMinHeight}px)`,
+				height: p.abutted ? height(p) : `max(${height(p)}, ${opts.eventMinHeight}px)`,
 				...inLane(lane, p.split, left, width),
 				"--tnc-event-readable-width": pct(span / cols / width),
 				"z-index": String(p.col + 1),
