@@ -545,8 +545,9 @@ test.describe("@touch time grid pinch", () => {
 
 	test("a pinch cannot shrink slots below what expandRows fills", async ({ page }) => {
 		await openDay(page, { expandRows: true, slotMinTime: "08:00", slotMaxTime: "14:00" });
+		// expandRows fits the rows after layout, not within setOptions.
+		await expect.poll(() => drawn(page)).toBeGreaterThan(24);
 		const fitted = await drawn(page);
-		expect(fitted).toBeGreaterThan(24);
 		await pinch(page, 200, 60);
 		expect(await drawn(page)).toBeCloseTo(fitted, 3);
 	});
