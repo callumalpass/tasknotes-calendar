@@ -28,6 +28,11 @@ export interface TimedPlacement<D = unknown> extends TimedSegment<D> {
 	 * Only then does the item keep to its lane's share of the column.
 	 */
 	split: boolean;
+	/**
+	 * Another item starts exactly where this short one ends, so it is drawn at
+	 * its real height instead of being stretched to the minimum height.
+	 */
+	abutted?: boolean;
 }
 
 export interface TimedDayLayout<D = unknown> {
@@ -87,49 +92,61 @@ export const defaultOrder: ItemOrder = (a, b) =>
 	a.item.title.localeCompare(b.item.title);
 
 /**
+ * Whether `b`, starting no earlier than `a`, collides with `a`. Short items count
+ * as `minMinutes` tall, so a later item inside that displayed height collides,
+ * but one starting exactly at `a`'s end does not: back-to-back items tile the
+ * column, and `a` is drawn at its real height.
+ */
+function collides(a: TimedSegment, b: TimedSegment, minMinutes: number): boolean {
+	if (b.startMin < a.endMin) return true;
+	if (b.startMin === a.endMin && a.endMin > a.startMin) return false;
+	return b.startMin < a.startMin + minMinutes;
+}
+
+/** Whether two segments collide, in either order. */
+function overlaps(a: TimedSegment, b: TimedSegment, minMinutes: number): boolean {
+	return a.startMin <= b.startMin ? collides(a, b, minMinutes) : collides(b, a, minMinutes);
+}
+
+/**
  * Packs overlapping segments into columns. Items in the same overlap cluster
  * share a column count; each item stretches right until it meets an overlapping
  * neighbour.
  */
 export function packTimed<D>(segs: TimedSegment<D>[], minMinutes: number, order: ItemOrder<D> = defaultOrder): TimedPlacement<D>[] {
-	const sorted = segs
-		.map((s) => ({ ...s, end: Math.max(s.endMin, s.startMin + minMinutes) }))
-		.sort((a, b) => a.startMin - b.startMin || b.end - a.end || order(a.item, b.item));
+	const sorted = [...segs].sort((a, b) =>
+		a.startMin - b.startMin ||
+		Math.max(b.endMin, b.startMin + minMinutes) - Math.max(a.endMin, a.startMin + minMinutes) ||
+		order(a.item, b.item));
 	const out: TimedPlacement<D>[] = [];
-	let cluster: (TimedPlacement<D> & { end: number })[] = [];
-	let colEnds: number[] = [];
-	let clusterEnd = -Infinity;
+	let cluster: TimedPlacement<D>[] = [];
+	/** The last item placed in each column of the current cluster. */
+	let colLast: TimedPlacement<D>[] = [];
 	let clusterIndex = 0;
 	const flush = () => {
 		if (cluster.length) clusterIndex++;
-		const cols = colEnds.length;
+		const cols = colLast.length;
 		for (const p of cluster) {
 			p.cols = cols;
 			let span = 1;
-			while (p.col + span < cols && !cluster.some((o) => o.col === p.col + span && o.startMin < p.end && p.startMin < o.end)) span++;
+			while (p.col + span < cols && !cluster.some((o) => o.col === p.col + span && overlaps(o, p, minMinutes))) span++;
 			p.span = span;
 		}
 		cluster = [];
-		colEnds = [];
+		colLast = [];
 	};
 	for (const s of sorted) {
-		if (s.startMin >= clusterEnd) {
-			flush();
-			clusterEnd = -Infinity;
-		}
-		let col = colEnds.findIndex((end) => end <= s.startMin);
-		if (col < 0) {
-			col = colEnds.length;
-			colEnds.push(0);
-		}
-		colEnds[col] = s.end;
-		const p = { ...s, col, cols: 1, span: 1, cluster: clusterIndex, split: false };
+		if (!cluster.some((o) => collides(o, s, minMinutes))) flush();
+		let col = colLast.findIndex((last) => !collides(last, s, minMinutes));
+		if (col < 0) col = colLast.length;
+		const p: TimedPlacement<D> = { ...s, col, cols: 1, span: 1, cluster: clusterIndex, split: false };
+		colLast[col] = p;
 		cluster.push(p);
 		out.push(p);
-		clusterEnd = Math.max(clusterEnd, s.end);
 	}
 	flush();
-	for (const p of out) delete (p as Partial<{ end: number }>).end;
+	const starts = new Set(out.map((p) => p.startMin));
+	for (const p of out) if (p.endMin > p.startMin && p.startMin + minMinutes > p.endMin && starts.has(p.endMin)) p.abutted = true;
 	return out;
 }
 
@@ -161,15 +178,8 @@ export function layoutTimedDay<D>(
 /** Marks clusters of `lane` that overlap any item of `other`, at displayed (min) heights. */
 function markSplit<D>(lane: TimedPlacement<D>[], other: TimedPlacement<D>[], minMinutes: number): void {
 	if (!lane.length || !other.length) return;
-	const end = (p: TimedPlacement<D>) => Math.max(p.endMin, p.startMin + minMinutes);
-	const ranges = new Map<number, [number, number]>();
-	for (const p of lane) {
-		const r = ranges.get(p.cluster);
-		if (r) r[1] = Math.max(r[1], end(p));
-		else ranges.set(p.cluster, [p.startMin, end(p)]);
-	}
 	const split = new Set<number>();
-	for (const [cluster, [s, e]] of ranges) if (other.some((o) => o.startMin < e && s < end(o))) split.add(cluster);
+	for (const p of lane) if (!split.has(p.cluster) && other.some((o) => overlaps(p, o, minMinutes))) split.add(p.cluster);
 	for (const p of lane) p.split = split.has(p.cluster);
 }
 
