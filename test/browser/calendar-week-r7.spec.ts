@@ -33,3 +33,21 @@ test("short narrow events give their title the time label's space without losing
 	const eventWidth = await event.evaluate(element => element.getBoundingClientRect().width);
 	expect(titleWidth).toBeGreaterThan(eventWidth - 24);
 });
+
+test("hour-long events keep their time visible in narrow, busy columns", async ({ page }) => {
+	await page.setViewportSize({ width: 1000, height: 800 });
+	await open(page, "view=timeGridWeek&date=2026-10-21");
+	await page.evaluate(() => window.tnc.setItems([
+		{ id: "gym", title: "Gym Workout", start: "2026-10-21T08:00", end: "2026-10-21T09:00" },
+		{ id: "long", title: "Exercise (Chest, Shoulders, and Triceps) with a long description", start: "2026-10-21T10:00", end: "2026-10-21T11:00" },
+		{ id: "mid", title: "Exercise (Chest, Shoulders, and Triceps) with a long description", start: "2026-10-21T12:00", end: "2026-10-21T12:45" },
+	]));
+	for (const id of ["gym", "long", "mid"]) {
+		const event = page.locator(`.tnc-item[data-id="${id}"]`);
+		const time = event.locator(".tnc-item-time");
+		await expect(time).toBeVisible();
+		await expect(time).not.toBeEmpty();
+		const [timeBox, eventBox] = await Promise.all([time.boundingBox(), event.boundingBox()]);
+		expect(timeBox!.y + timeBox!.height).toBeLessThanOrEqual(eventBox!.y + eventBox!.height);
+	}
+});
