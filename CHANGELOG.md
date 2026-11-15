@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.12
 
 - Hosts can pass a `tooltip(el, text)` option to show hover tooltips their own way (Obsidian's `setTooltip`, say). Without it, tooltips stay as `title` attributes.
 
