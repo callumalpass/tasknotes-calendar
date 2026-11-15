@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Hosts can pass a `tooltip(el, text)` option to show hover tooltips their own way (Obsidian's `setTooltip`, say). Without it, tooltips stay as `title` attributes.
+
 ## 0.1.11
 
 - Hour-long timed items keep their time in narrow columns. Only single-row short items drop the time label when narrow; in the stacked layout the title is clamped to the lines left above the time (callumalpass/tasknotes#2528).

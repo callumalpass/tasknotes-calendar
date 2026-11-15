@@ -57,6 +57,8 @@ export interface ViewContext<D = unknown> {
 	/** Refreshes parts of an item element that depend on position (time label). */
 	refreshItemEl(el: HTMLElement, meta: ElMeta<D>): void;
 	destroyItemEl(el: HTMLElement): void;
+	/** Sets or clears (empty `text`) an element's hover tooltip through `opts.tooltip`. */
+	tooltip(el: HTMLElement, text: string): void;
 	/** Builds a nav link (day number / header) for a day. */
 	navLink(day: Day, label: Node | string, cls: string): HTMLElement;
 	openMore(day: Day, anchor: HTMLElement, jsEvent: MouseEvent | KeyboardEvent, itemIds?: readonly string[]): void;

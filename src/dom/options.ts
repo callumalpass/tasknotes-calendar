@@ -433,6 +433,13 @@ export interface CalendarOptions<D = unknown> {
 	/** Return false to skip the built-in popover. */
 	onMoreClick?: (arg: MoreArg<D>) => boolean | void;
 
+	/**
+	 * Shows `text` as `el`'s hover tooltip; an empty `text` clears it. Default:
+	 * the `title` attribute. Hosts with their own tooltips (Obsidian's
+	 * `setTooltip`, say) pass them here.
+	 */
+	tooltip?: (el: HTMLElement, text: string) => void;
+
 	/* render hooks (indicators in `monthDisplay: "dots"` get class names and mount hooks, not content) */
 	itemContent?: (arg: ItemArg<D>) => Node | string | null | undefined;
 	itemClassNames?: (arg: ItemArg<D>) => string[] | string | undefined;
@@ -569,6 +576,7 @@ export const LAYOUT_KEYS = new Set<keyof CalendarOptions>([
 	"text",
 	"timeline",
 	"editable",
+	"tooltip",
 	"itemContent",
 	"itemClassNames",
 	"listItemContent",

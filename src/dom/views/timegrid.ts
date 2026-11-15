@@ -476,10 +476,10 @@ export class TimeGridView<D> implements View {
 					h(ctx.doc, "span", "tnc-collision-title", { "aria-hidden": "true" }, items.join(" · ")),
 				);
 				link.setAttribute("aria-label", `${count}, ${interval}: ${items.join(", ")}`);
-				link.title = link.getAttribute("aria-label")!;
+				ctx.tooltip(link, link.getAttribute("aria-label")!);
 			} else {
+				ctx.tooltip(link, "");
 				link.removeAttribute("aria-label");
-				link.removeAttribute("title");
 			}
 			const cols = maxStack;
 			setStyle(link, {

@@ -118,3 +118,11 @@ test("year: narrow calendars preserve date targets and reveal the anchor month",
 	await expect(page.locator(".tnc-ym-dots").first()).toBeHidden();
 	await expect(page.locator(".tnc")).toHaveScreenshot("year-narrow.png", { animations: "disabled" });
 });
+
+test("hosts can render their own tooltips instead of title attributes", async ({ page }) => {
+	await open(page, "view=timeGridWeek&date=2026-10-21&tz=Europe%2FLondon&locale=en-GB");
+	await expect(page.locator(".tnc-toolbar .tnc-btn[title]").first()).toBeAttached();
+	await page.evaluate(() => window.tnc.calendar.setOptions({ tooltip: (el, text) => { el.dataset.tip = text; } }));
+	await expect(page.locator(".tnc-toolbar .tnc-btn[data-tip]").first()).toBeAttached();
+	await expect(page.locator(".tnc [title]")).toHaveCount(0);
+});

@@ -45,8 +45,10 @@ export class DateStrip<D> {
 		const head = h(doc, "div", "tnc-strip-head");
 		this.title = h(doc, "button", "tnc-strip-title", { type: "button", "aria-expanded": "false" });
 		this.title.addEventListener("click", () => this.setExpanded(!this.expanded));
-		const prev = h(doc, "button", "tnc-strip-nav tnc-strip-prev", { type: "button", "aria-label": text.prev, title: text.prev }, "‹");
-		const next = h(doc, "button", "tnc-strip-nav tnc-strip-next", { type: "button", "aria-label": text.next, title: text.next }, "›");
+		const prev = h(doc, "button", "tnc-strip-nav tnc-strip-prev", { type: "button", "aria-label": text.prev }, "‹");
+		const next = h(doc, "button", "tnc-strip-nav tnc-strip-next", { type: "button", "aria-label": text.next }, "›");
+		ctx.tooltip(prev, text.prev);
+		ctx.tooltip(next, text.next);
 		prev.addEventListener("click", () => this.step(-1));
 		next.addEventListener("click", () => this.step(1));
 		this.todayBtn = h(doc, "button", "tnc-strip-today", { type: "button" }, text.today);
