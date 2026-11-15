@@ -553,6 +553,12 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		return specific ?? base;
 	}
 
+	tooltip(el: HTMLElement, text: string): void {
+		if (this.opts.tooltip) this.opts.tooltip(el, text);
+		else if (text) el.title = text;
+		else el.removeAttribute("title");
+	}
+
 	navLink(day: Day, label: Node | string, cls: string): HTMLElement {
 		const btn = h(this.doc, "button", `tnc-navlink ${cls}`, { type: "button", "data-nav-date": formatDay(day) }, label);
 		btn.addEventListener("click", (ev) => {
@@ -998,7 +1004,8 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		const cfg: ToolbarOptions = tb === true ? {} : tb;
 		const views = cfg.views ?? (["month", "week", "days", "day", "list", "year"] as ViewType[]);
 		const btn = (label: string, hint: string, cls: string, onClick: (ev: MouseEvent) => void, pressed?: boolean) => {
-			const b = h(this.doc, "button", `tnc-btn ${cls}`, { type: "button", title: hint, "aria-label": hint }, label);
+			const b = h(this.doc, "button", `tnc-btn ${cls}`, { type: "button", "aria-label": hint }, label);
+			this.tooltip(b, hint);
 			if (pressed !== undefined) b.setAttribute("aria-pressed", String(pressed));
 			b.addEventListener("click", onClick);
 			return b;
@@ -1214,7 +1221,9 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	private addPorts(el: HTMLElement, n: NormalizedItem<D>): void {
 		const edges: LinkEdge[] = n.item.kind === "milestone" ? ["finish"] : ["start", "finish"];
 		for (const edge of edges) {
-			el.append(h(this.doc, "span", `tnc-port tnc-port-${edge}`, { "aria-hidden": "true", "data-edge": edge, title: "Drag to link" }));
+			const port = h(this.doc, "span", `tnc-port tnc-port-${edge}`, { "aria-hidden": "true", "data-edge": edge });
+			this.tooltip(port, "Drag to link");
+			el.append(port);
 		}
 	}
 

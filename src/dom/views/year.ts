@@ -77,7 +77,7 @@ export class YearView<D> implements View {
 			);
 			const label = this.ctx.fmt.longDate(c.day);
 			c.el.setAttribute("aria-label", items.length ? `${label}, ${this.ctx.text.itemCount(items.length)}` : label);
-			c.el.title = items.length ? `${label}\n${items.slice(0, 8).map((n) => `• ${n.item.title}`).join("\n")}${items.length > 8 ? `\n${this.ctx.text.more(items.length - 8)}` : ""}` : label;
+			this.ctx.tooltip(c.el, items.length ? `${label}\n${items.slice(0, 8).map((n) => `• ${n.item.title}`).join("\n")}${items.length > 8 ? `\n${this.ctx.text.more(items.length - 8)}` : ""}` : label);
 		}
 	}
 
