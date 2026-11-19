@@ -588,3 +588,50 @@ test.describe("@touch time grid pinch", () => {
 		expect(await heights(page)).toEqual([]);
 	});
 });
+
+test("a time-grid selection and its label paint above existing items", async ({ page }) => {
+	await open(page, "view=timeGridDay&date=2026-10-21&tz=UTC");
+	await page.evaluate(() => window.tnc.calendar.setItems([
+		{ id: "existing", title: "Existing", start: "2026-10-21T10:00", end: "2026-10-21T11:00" },
+		{ id: "other", title: "Other", start: "2026-10-21T13:00", end: "2026-10-21T14:00" },
+	]));
+	// Selections ignore pointer events, which elementFromPoint honours; let the probe hit them.
+	const topmost = (point: { x: number; y: number }, selector: string) => page.evaluate(({ point, selector }) => {
+		const style = document.head.appendChild(document.createElement("style"));
+		style.textContent = ".tnc .tnc-sel-layer, .tnc .tnc-sel, .tnc .tnc-item { pointer-events: auto !important; }";
+		try { return !!document.elementFromPoint(point.x, point.y)?.closest(selector); } finally { style.remove(); }
+	}, { point, selector });
+
+	// Select upwards from below the item into it, so the label lies over the item.
+	const below = await slotPoint(page, "2026-10-21", 11 * 60 + 45);
+	const inside = await slotPoint(page, "2026-10-21", 10 * 60 + 15);
+	await page.mouse.move(below.x, below.y); await page.mouse.down();
+	await page.mouse.move(inside.x, inside.y, { steps: 10 });
+	const mirror = page.locator(".tnc-sel--mirror");
+	await expect(mirror).toBeVisible();
+	const label = (await mirror.boundingBox())!;
+	const existing = (await item(page, "existing").boundingBox())!;
+	expect(label.y).toBeLessThan(existing.y + existing.height);
+	expect(await topmost({ x: label.x + 10, y: label.y + 8 }, ".tnc-sel--mirror")).toBe(true);
+	expect(await mirror.evaluate(el => {
+		const probe = document.createElement("canvas").getContext("2d")!;
+		probe.fillStyle = getComputedStyle(el).backgroundColor;
+		probe.fillRect(0, 0, 1, 1);
+		return probe.getImageData(0, 0, 1, 1).data[3];
+	})).toBe(255);
+	await page.mouse.move(below.x, below.y, { steps: 10 });
+	await page.mouse.up();
+	await page.keyboard.press("Escape");
+
+	// A dragged item still paints above the items it passes over.
+	const from = await center(item(page, "existing"));
+	const over = await slotPoint(page, "2026-10-21", 13 * 60 + 30);
+	await page.mouse.move(from.x, from.y); await page.mouse.down();
+	await page.mouse.move(over.x, over.y, { steps: 12 });
+	const dragged = page.locator(".tnc-item:is(.is-dragging, .is-mirror)").first();
+	await expect(dragged).toBeVisible();
+	const box = (await dragged.boundingBox())!;
+	expect(await topmost({ x: box.x + box.width / 2, y: box.y + box.height / 2 }, ".tnc-item:is(.is-dragging, .is-mirror)")).toBe(true);
+	await page.mouse.move(from.x, from.y, { steps: 12 });
+	await page.mouse.up();
+});
