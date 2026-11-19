@@ -595,6 +595,9 @@ test("a time-grid selection and its label paint above existing items", async ({ 
 		{ id: "existing", title: "Existing", start: "2026-10-21T10:00", end: "2026-10-21T11:00" },
 		{ id: "other", title: "Other", start: "2026-10-21T13:00", end: "2026-10-21T14:00" },
 	]));
+	// setItems redraws on the next frame; measure slots only once the items have settled.
+	await expect(item(page, "other")).toBeVisible();
+	await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 	// Selections ignore pointer events, which elementFromPoint honours; let the probe hit them.
 	const topmost = (point: { x: number; y: number }, selector: string) => page.evaluate(({ point, selector }) => {
 		const style = document.head.appendChild(document.createElement("style"));
@@ -605,6 +608,7 @@ test("a time-grid selection and its label paint above existing items", async ({ 
 	// Select upwards from below the item into it, so the label lies over the item.
 	const below = await slotPoint(page, "2026-10-21", 11 * 60 + 45);
 	const inside = await slotPoint(page, "2026-10-21", 10 * 60 + 15);
+	expect(await page.evaluate(({ x, y }) => !!document.elementFromPoint(x, y)?.closest(".tnc-item"), below)).toBe(false);
 	await page.mouse.move(below.x, below.y); await page.mouse.down();
 	await page.mouse.move(inside.x, inside.y, { steps: 10 });
 	const mirror = page.locator(".tnc-sel--mirror");
