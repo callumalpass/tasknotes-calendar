@@ -17,7 +17,7 @@ import { ItemStore, type StoreChange } from "../core/store";
 import type { CalendarItem, DateInput, DateRange, NormalizedItem } from "../core/types";
 import { dayOf, formatFloating, getTimeZone, parseDateInput, type TimeZone, toInstant, wallTime } from "../core/zone";
 import { type ElMeta, ItemPool, type Selection, type View, type ViewContext } from "./context";
-import { classList, h, setAttrs, setStyle } from "./dom";
+import { classList, h, scrollerOf, setAttrs, setStyle } from "./dom";
 import { Formatter, localeFirstDay } from "./format";
 import {
 	type CalendarOptions,
@@ -45,7 +45,7 @@ import { YearView } from "./views/year";
 
 const EXTERNAL_ID = "__tnc_external__";
 const SVG_NS = "http://www.w3.org/2000/svg";
-/** How far an agenda list grows before picking a later day moves its start. */
+/** How far an agenda list can load on either side of its opening date. */
 const MAX_AGENDA_DAYS = 366;
 
 type DragMode = "move" | "resize-end" | "resize-start" | "select" | "external";
@@ -166,7 +166,8 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 	private readonly viewHost: HTMLElement;
 	private current: View | null = null;
 	private anchor: Day = 0;
-	/** End of an agenda list grown past its `listDayCount`. */
+	/** Range extensions beyond the list anchored by explicit navigation. */
+	private listStart: Day | null = null;
 	private listEnd: Day | null = null;
 	private session: Session<D> | null = null;
 	private selection: Selection | null = null;
@@ -758,6 +759,10 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		}
 	}
 
+	private listBaseStart(): Day {
+		return this.opts.listStart === "week" ? startOfWeek(this.anchor, this.firstDay) : this.anchor;
+	}
+
 	private computeRange(): { startDay: Day; endDay: Day } {
 		const { view, dayCount, listDayCount } = this.opts;
 		const a = this.anchor;
@@ -771,9 +776,10 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 				return { startDay: s, endDay: s + 7 };
 			}
 			case "list": {
-				const s = this.opts.listStart === "week" ? startOfWeek(a, this.firstDay) : a;
-				const end = s + Math.max(1, listDayCount);
-				return { startDay: s, endDay: this.opts.listAgenda && this.listEnd !== null ? Math.max(end, this.listEnd) : end };
+				const start = this.listBaseStart();
+				const end = start + Math.max(1, listDayCount);
+				if (!this.opts.listAgenda) return { startDay: start, endDay: end };
+				return { startDay: Math.min(start, this.listStart ?? start), endDay: Math.max(end, this.listEnd ?? end) };
 			}
 			case "month": {
 				const s = startOfWeek(startOfMonth(a), this.firstDay);
@@ -814,7 +820,7 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		const snap = Math.max(1, parseDurationMinutes(this.opts.snapDuration ?? null, duration));
 		this.slot = { min, max, duration, snap, scroll: parseDurationMinutes(this.opts.scrollTime, 480) };
 
-		if (navigated) this.listEnd = null;
+		if (navigated) this.listStart = this.listEnd = null;
 		const prev = this.view as ViewInfo | undefined;
 		this.applyRange();
 		this.conflicts = dependencyConflicts(this.store);
@@ -954,21 +960,27 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		return this.opts.view === "list" && this.opts.listAgenda && this.current instanceof ListView ? this.current : null;
 	}
 
-	extendList(endDay: Day): void {
-		if (!this.agendaList()) return;
-		const { startDay, endDay: current } = this.view.range;
-		const end = Math.min(endDay, startDay + MAX_AGENDA_DAYS);
-		if (end <= current) return;
-		this.listEnd = end;
+	extendList(day: Day, edge: "start" | "end" = "end"): void {
+		const list = this.agendaList();
+		if (!list) return;
+		const base = this.listBaseStart();
+		if (edge === "start") {
+			const start = Math.max(day, base - MAX_AGENDA_DAYS);
+			if (start >= this.view.range.startDay) return;
+			this.listStart = start;
+		} else {
+			const end = Math.min(day, base + MAX_AGENDA_DAYS);
+			if (end <= this.view.range.endDay) return;
+			this.listEnd = end;
+		}
 		this.applyRange();
-		this.current?.render(null);
-		this.strip?.draw();
+		list.render(null);
 		this.opts.onRangeChange?.(this.view);
 	}
 
 	showListDay(day: Day): void {
 		if (!this.agendaList()) return;
-		if (day < this.view.range.startDay || day - this.view.range.startDay >= MAX_AGENDA_DAYS) {
+		if (day < this.view.range.startDay || day - this.listBaseStart() >= MAX_AGENDA_DAYS) {
 			this.anchor = day;
 			this.rebuild(true);
 		}
@@ -2358,18 +2370,6 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 			dataTransfer: dt,
 		});
 	};
-}
-
-/** Nearest ancestor that scrolls along `axis`, else the document's scroller. */
-function scrollerOf(el: Element, axis: "x" | "y"): Element | null {
-	const doc = el.ownerDocument;
-	const win = doc.defaultView;
-	for (let p = el.parentElement; p && p !== doc.body && p !== doc.documentElement; p = p.parentElement) {
-		const overflow = win?.getComputedStyle(p)[axis === "x" ? "overflowX" : "overflowY"] ?? "";
-		const room = axis === "x" ? p.scrollWidth > p.clientWidth : p.scrollHeight > p.clientHeight;
-		if (room && /auto|scroll|overlay/.test(overflow)) return p;
-	}
-	return doc.scrollingElement;
 }
 
 /** Whether hosts need to hear of a new view: its type, range or data range changed. */

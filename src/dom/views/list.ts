@@ -2,7 +2,7 @@ import { type Day, parseDay } from "../../core/date";
 import type { StoreChange } from "../../core/store";
 import type { NormalizedItem } from "../../core/types";
 import { ItemPool, type Selection, type View, type ViewContext } from "../context";
-import { h } from "../dom";
+import { h, scrollerOf } from "../dom";
 import type { Hit } from "../options";
 
 /** How far below the screen the agenda loads more days. */
@@ -18,7 +18,7 @@ interface Lead<D> {
 /**
  * N-day agenda: one section per day that has items. With `listAgenda`, every
  * day gets a section, the calendar's date strip follows the day at the top,
- * and more days load as the list nears its end. A lead section above the
+ * and more days load at the list edges. A lead section above the
  * first day can collect items such as overdue work.
  */
 export class ListView<D> implements View {
@@ -32,6 +32,11 @@ export class ListView<D> implements View {
 	private readonly sentinel: HTMLElement | null = null;
 	private readonly loader: IntersectionObserver | null = null;
 	private frame: number | null = null;
+	private scrollTop = 0;
+	private touchY: number | null = null;
+	private loadEarlier = false;
+	private renderedStart: Day | null = null;
+	private hasPrepended = false;
 	/** A picked day stays marked until the list is scrolled by hand. */
 	private pinned = false;
 	private pinnedTop = 0;
@@ -60,8 +65,10 @@ export class ListView<D> implements View {
 		}
 		win.addEventListener("scroll", this.onScroll, { capture: true, passive: true });
 		// A hand on the list, not the strip, folds the month away.
-		this.scroller.addEventListener("wheel", this.fold, { passive: true });
-		this.scroller.addEventListener("touchmove", this.fold, { passive: true });
+		this.scroller.addEventListener("wheel", this.onWheel, { passive: true });
+		this.scroller.addEventListener("touchstart", this.onTouchStart, { passive: true });
+		this.scroller.addEventListener("touchmove", this.onTouchMove, { passive: true });
+		this.scroller.addEventListener("keydown", this.onKeyDown);
 	}
 
 	private itemsOn(day: Day): NormalizedItem<D>[] {
@@ -77,6 +84,9 @@ export class ListView<D> implements View {
 	render(_change: StoreChange | null): void {
 		const { ctx, agenda } = this;
 		const { doc, days, opts } = ctx;
+		const start = ctx.view.range.startDay;
+		this.hasPrepended ||= this.renderedStart !== null && start < this.renderedStart;
+		const anchor = this.hasPrepended ? this.captureScrollAnchor() : null;
 		const includes = agenda && opts.listLeadTitle !== null ? opts.listLeadIncludes : undefined;
 		const leadItems: NormalizedItem<D>[] = [];
 		const inLead = new Set<string>();
@@ -140,6 +150,14 @@ export class ListView<D> implements View {
 				else this.body.prepend(empty);
 			}
 		} else empty?.remove();
+		this.renderedStart = start;
+		if (anchor?.section.isConnected) {
+			// Measure after layout so native scroll anchoring, when present, is already accounted for.
+			const shift = anchor.section.getBoundingClientRect().top - anchor.top;
+			anchor.scroller.scrollTop += shift;
+			if (this.pinned) this.pinnedTop = this.scroller.scrollTop;
+		}
+		if (agenda) this.scrollTop = (anchor?.scroller ?? this.scrollContainer()).scrollTop;
 		this.ctx.strip?.draw();
 		// Observing again re-checks a sentinel that is still in reach after new days arrive.
 		if (this.loader && this.sentinel) {
@@ -205,22 +223,93 @@ export class ListView<D> implements View {
 		this.ctx.strip?.setFocus(day);
 		this.pinned = true;
 		this.pinnedTop = this.scroller.scrollTop;
+		this.scrollTop = this.scrollContainer().scrollTop;
 	}
 
-	private readonly fold = () => {
+	private scrollContainer(): Element {
+		return this.ctx.opts.height === "auto"
+			? scrollerOf(this.scroller, "y") ?? this.scroller
+			: this.scroller;
+	}
+
+	private scrollEdge(scroller: Element): number {
+		return scroller === this.ctx.doc.scrollingElement ? 0 : Math.max(0, scroller.getBoundingClientRect().top);
+	}
+
+	private captureScrollAnchor(): { section: HTMLElement; scroller: Element; top: number } | null {
+		const scroller = this.scrollContainer();
+		const edge = Math.max(this.scrollEdge(scroller), this.ctx.strip?.el.getBoundingClientRect().bottom ?? 0);
+		const bottom = scroller === this.ctx.doc.scrollingElement
+			? this.ctx.win.innerHeight
+			: Math.min(this.ctx.win.innerHeight, scroller.getBoundingClientRect().bottom);
+		for (const section of this.body.querySelectorAll<HTMLElement>(":scope > .tnc-list-section")) {
+			const rect = section.getBoundingClientRect();
+			if (rect.top >= bottom) break;
+			if (rect.bottom > edge) return { section, scroller, top: rect.top };
+		}
+		return null;
+	}
+
+	private fold(): void {
 		this.pinned = false;
 		const strip = this.ctx.strip;
 		if (strip?.expanded) strip.setExpanded(false);
+	}
+
+	private readonly onWheel = (ev: WheelEvent) => {
+		this.fold();
+		if (!ev.ctrlKey && ev.deltaY < 0) this.requestEarlier();
 	};
 
-	private readonly onScroll = () => {
+	private readonly onTouchStart = (ev: TouchEvent) => {
+		this.touchY = ev.touches.length === 1 ? (ev.touches[0]?.clientY ?? null) : null;
+	};
+
+	private readonly onTouchMove = (ev: TouchEvent) => {
+		const y = ev.touches.length === 1 ? (ev.touches[0]?.clientY ?? null) : null;
+		this.fold();
+		if (y !== null && this.touchY !== null && y > this.touchY) this.requestEarlier();
+		this.touchY = y;
+	};
+
+	private readonly onKeyDown = (ev: KeyboardEvent) => {
+		if (ev.target !== this.scroller || ev.altKey || ev.ctrlKey || ev.metaKey) return;
+		if (ev.key === "ArrowUp" || ev.key === "PageUp" || ev.key === "Home" || (ev.key === " " && ev.shiftKey)) {
+			this.requestEarlier();
+		}
+	};
+
+	private requestEarlier(): void {
+		this.loadEarlier = true;
+		this.scheduleScroll();
+	}
+
+	private readonly onScroll = (ev: Event) => {
+		const scroller = this.scrollContainer();
+		const target = scroller === this.ctx.doc.scrollingElement ? this.ctx.doc : scroller;
+		if (ev.target === target) {
+			if (scroller.scrollTop < this.scrollTop - 1) this.loadEarlier = true;
+			this.scrollTop = scroller.scrollTop;
+		}
 		if (this.pinned && Math.abs(this.scroller.scrollTop - this.pinnedTop) > 1) this.pinned = false;
+		this.scheduleScroll();
+	};
+
+	private scheduleScroll(): void {
 		if (this.frame !== null) return;
 		this.frame = this.ctx.win.requestAnimationFrame(() => {
 			this.frame = null;
+			if (this.loadEarlier) {
+				this.loadEarlier = false;
+				const edge = this.scrollEdge(this.scrollContainer());
+				const top = this.body.getBoundingClientRect().top;
+				if (top >= edge - 1 && top < this.ctx.win.innerHeight) {
+					this.ctx.extendList(this.ctx.view.range.startDay - Math.max(7, this.ctx.opts.listDayCount), "start");
+				}
+			}
 			this.followTop();
 		});
-	};
+	}
 
 	/** Marks the first day not hidden under the strip. */
 	private followTop(): void {
@@ -258,6 +347,7 @@ export class ListView<D> implements View {
 
 	setScroll(s: { top: number; left: number }) {
 		this.scroller.scrollTop = s.top;
+		if (this.agenda) this.scrollTop = this.scrollContainer().scrollTop;
 	}
 
 	elementsFor(id: string): HTMLElement[] {
@@ -270,6 +360,10 @@ export class ListView<D> implements View {
 		win.removeEventListener("scroll", this.onScroll, { capture: true });
 		if (this.frame !== null) win.cancelAnimationFrame(this.frame);
 		this.loader?.disconnect();
+		this.scroller.removeEventListener("wheel", this.onWheel);
+		this.scroller.removeEventListener("touchstart", this.onTouchStart);
+		this.scroller.removeEventListener("touchmove", this.onTouchMove);
+		this.scroller.removeEventListener("keydown", this.onKeyDown);
 		if (this.lead) opts.listLeadWillUnmount?.({ el: this.lead.slot });
 		this.lead?.pool.clear();
 		for (const p of this.pools.values()) p.clear();

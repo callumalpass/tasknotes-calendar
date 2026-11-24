@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Scrolling up in an agenda list loads earlier days while keeping the visible rows in place. Thanks to @Oneiran for reporting callumalpass/tasknotes#2683.
+
 - A time-grid selection draws above existing timed items, and its labelled mirror is opaque, so the time range stays readable while dragging over them. Dragged items still draw above it (callumalpass/tasknotes#2602).
 
 ## 0.1.12

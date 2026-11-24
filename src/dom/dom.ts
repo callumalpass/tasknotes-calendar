@@ -37,3 +37,15 @@ export function setStyle(el: HTMLElement, props: Record<string, string | number 
 export function pct(n: number): string {
 	return `${Math.round(n * 10000) / 100}%`;
 }
+
+/** Nearest ancestor that scrolls along `axis`, else the document's scroller. */
+export function scrollerOf(el: Element, axis: "x" | "y"): Element | null {
+	const doc = el.ownerDocument;
+	const win = doc.defaultView;
+	for (let p = el.parentElement; p && p !== doc.body && p !== doc.documentElement; p = p.parentElement) {
+		const overflow = win?.getComputedStyle(p)[axis === "x" ? "overflowX" : "overflowY"] ?? "";
+		const room = axis === "x" ? p.scrollWidth > p.clientWidth : p.scrollHeight > p.clientHeight;
+		if (room && /auto|scroll|overlay/.test(overflow)) return p;
+	}
+	return doc.scrollingElement;
+}
