@@ -72,8 +72,8 @@ export interface ViewContext<D = unknown> {
 	dateClick(day: Day, jsEvent: MouseEvent | KeyboardEvent): void;
 	/** The date strip, when the view has one. */
 	readonly strip: DateStrip<D> | null;
-	/** Agenda lists: grows the range to end at `endDay`. */
-	extendList(endDay: Day): void;
+	/** Agenda lists: grows the range to the given edge. */
+	extendList(day: Day, edge?: "start" | "end"): void;
 	/** Agenda lists: brings `day` to the top, moving the range to reach it. */
 	showListDay(day: Day): void;
 }
