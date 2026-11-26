@@ -22,6 +22,8 @@ export interface CalendarItem<D = unknown> {
 	end?: DateInput | null;
 	/** Defaults to true for date-only `start` strings. */
 	allDay?: boolean;
+	/** Positive elapsed minutes when dragging an all-day item into the time grid. */
+	timedDropDurationMinutes?: number;
 	/** Free-form kind used for styling and behaviour, e.g. "task", "event", "timeblock", "timeEntry". */
 	kind?: string;
 	/** Main colour. Background, border and text derive from it unless set. */

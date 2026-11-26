@@ -1856,7 +1856,11 @@ export class Calendar<D = unknown> implements ViewContext<D> {
 		if (o.allDay || grab.kind !== "time") {
 			const c = Math.floor((hit.day * MINUTES_PER_DAY + hit.minute) / snap) * snap;
 			const startMs = this.civilToMs(c);
-			return this.timedProposal(startMs, this.civilToMs(c + this.opts.defaultTimedMinutes));
+			const duration = o.allDay ? o.item.timedDropDurationMinutes : undefined;
+			const endMs = duration !== undefined && Number.isFinite(duration) && duration > 0
+				? startMs + duration * 60_000
+				: this.civilToMs(c + this.opts.defaultTimedMinutes);
+			return this.timedProposal(startMs, endMs);
 		}
 		const delta = Math.round((this.hitCivil(hit) - this.hitCivil(grab)) / snap) * snap;
 		const startCivil = this.civil(o.startMs) + delta;

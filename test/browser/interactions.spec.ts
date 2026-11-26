@@ -56,6 +56,24 @@ test.describe("time grid", () => {
 		await expect.poll(() => lastLog(page, "drop")).toBe("drop scheduled-3 2026-10-21 → 2026-10-22 (all-day)");
 	});
 
+	for (const [duration, end] of [[30, "14:30"], [undefined, "15:00"], [0, "15:00"]] as const) {
+		test(`an all-day drop previews and reports the timed range with duration ${duration}`, async ({ page }) => {
+			await open(page, "view=timeGridWeek&tz=UTC");
+			await page.evaluate((timedDropDurationMinutes) => window.tnc.setItems([{
+				id: "all-day-task", title: "All-day task", start: "2026-10-21", timedDropDurationMinutes,
+			}]), duration);
+			const from = await center(item(page, "all-day-task"));
+			const to = await slotPoint(page, "2026-10-21", 14 * 60 + 5);
+			await page.mouse.move(from.x, from.y);
+			await page.mouse.down();
+			await page.mouse.move(to.x, to.y, { steps: 10 });
+			const preview = page.locator('.tnc-item--timed.is-dragging[data-id="all-day-task"] .tnc-item-time');
+			await expect(preview).toHaveText(`14:00 – ${end}`, { timeout: 1500 });
+			await page.mouse.up();
+			await expect.poll(() => lastLog(page, "drop")).toBe(`drop all-day-task 2026-10-21T14:00 → 2026-10-21T${end}`);
+		});
+	}
+
 	test("Escape cancels a drag and a failed write reverts", async ({ page }) => {
 		await open(page, "view=timeGridWeek");
 		const el = item(page, "scheduled-2");
